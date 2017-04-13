@@ -208,6 +208,8 @@ int main(int argc, char *argv[]) {
         fft_shift(uvgrid, grid_size);
 
         // Do DFT. Complex-to-complex to keep with numpy (TODO: optimize)
+        // TODO: Use parallel fftw call. 
+        //
         fftw_plan plan;
         plan = fftw_plan_dft_2d(grid_size, grid_size, uvgrid, uvgrid, -1, FFTW_ESTIMATE);
         fftw_execute_dft(plan, uvgrid, uvgrid);

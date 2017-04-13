@@ -144,6 +144,9 @@ void convolve_aw_kernels(struct bl_data *bl,
     bl->awkern = (double complex *)malloc(awkern_count * awkern_size * sizeof(double complex));
 
     int time, freq;
+
+
+//# pragma omp parallel for
     for (time = 0; time < bl->time_count; time++) {
         for (freq = 0; freq < akern->freq_count; freq++) {
             double t = bl->time[time];
@@ -156,10 +159,8 @@ void convolve_aw_kernels(struct bl_data *bl,
             int w_plane = (int)floor((w - wkern->w_min) / wkern->w_step + .5);
             struct w_kernel *wk = &wkern->kern_by_w[w_plane];
 
-            // Here is where we normally would convolve the kernel -
-            // but it doesn't matter for this test, so we just copy
-            // the w-kernel.
-            //
+            // James Kent: this is my stab at convolving the kernels. Not sure if it is right yet
+            // TODO: Verify this. Write small scale version. 
             double complex *a3k = malloc(akern->size_x * akern->size_y * sizeof(double complex));
             int x,y;
             for (y = 0; y < akern->size_y;y++){
