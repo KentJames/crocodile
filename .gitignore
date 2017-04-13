@@ -7,6 +7,10 @@
 /crocodile.egg-info
 
 *.pyc
+*.o
+*.s
+*.swp
+*.out
 /build
 
 /examples/**/*.rst

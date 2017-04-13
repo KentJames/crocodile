@@ -14,12 +14,12 @@
 
 static const double c = 299792458.0;
 
-inline double uvw_lambda(struct bl_data *bl_data,
+static inline double uvw_lambda(struct bl_data *bl_data,
                          int time, int freq, int uvw) {
     return bl_data->uvw[3*time+uvw] * bl_data->freq[freq] / c;
 }
 
-inline int coord(int grid_size, double theta,
+static inline int coord(int grid_size, double theta,
                  struct bl_data *bl_data,
                  int time, int freq) {
 #ifdef ASSUME_UVW_0
@@ -31,7 +31,7 @@ inline int coord(int grid_size, double theta,
     return (y+grid_size/2) * grid_size + (x+grid_size/2);
 }
 
-inline void frac_coord(int grid_size, int kernel_size, int oversample,
+static inline void frac_coord(int grid_size, int kernel_size, int oversample,
                        double theta,
                        struct bl_data *bl_data,
                        int time, int freq,
@@ -125,9 +125,9 @@ uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
             }
         }
     }
-
     return flops;
 }
+
 
 void convolve_aw_kernels(struct bl_data *bl,
                          struct w_kernel_data *wkern,
@@ -159,9 +159,31 @@ void convolve_aw_kernels(struct bl_data *bl,
             // Here is where we normally would convolve the kernel -
             // but it doesn't matter for this test, so we just copy
             // the w-kernel.
+            //
+            double complex *a3k = malloc(akern->size_x * akern->size_y * sizeof(double complex));
+            int x,y;
+            for (y = 0; y < akern->size_y;y++){
+                for(x = 0; x < akern->size_x;x++){
+                    *(a3k+y*akern->size_x+x) = *(a1k->data+y*akern->size_x+x) * *(a2k->data+(y*akern->size_x - x)+(x-y));
+
+                }
+            }
+            double complex *awk = malloc(akern->size_x * wkern->size_y * sizeof(double complex));
+
+            for (y =0; y < wkern->size_y;y++){
+                for(x = 0; x<akern->size_x;x++){
+                    *(awk + y*akern->size_x + x) = *(a3k + y*akern->size_x+x) * *(wk->data+(y*akern->size_x -x) + (x-y));
+                }
+            }
+            
+
+            
             memcpy(&bl->awkern[(time * akern->freq_count + freq) * awkern_size],
-                   wk->data,
+                   awk,
                    awkern_size * sizeof(double complex));
+
+            free(awk);
+            free(a3k);
 
         }
     }
