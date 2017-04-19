@@ -16,6 +16,8 @@
 
 #include "grid.h"
 
+#define NUM_THREADS 8
+
 int main(int argc, char *argv[]) {
 
     // Read parameters
@@ -210,7 +212,9 @@ int main(int argc, char *argv[]) {
         // Do DFT. Complex-to-complex to keep with numpy (TODO: optimize)
         // TODO: Use parallel fftw call. 
         //
+        fftw_init_threads();
         fftw_plan plan;
+        fftw_plan_with_nthreads(NUM_THREADS);
         plan = fftw_plan_dft_2d(grid_size, grid_size, uvgrid, uvgrid, -1, FFTW_ESTIMATE);
         fftw_execute_dft(plan, uvgrid, uvgrid);
 
