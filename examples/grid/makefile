@@ -1,6 +1,6 @@
 CC = gcc
-CC_FLAGS =  -w -O2 -ftree-vectorize -fopt-info-vec-optimized -fopenmp
-LFLAGS = -lhdf5 -lm -lfftw3 -lgomp
+CC_FLAGS =  -w -g -O2 -ftree-vectorize -fopt-info-vec-optimized -fopenmp
+LFLAGS = -g -lhdf5 -lm -lfftw3 -lfftw3_threads -lgomp
 
 
 all:

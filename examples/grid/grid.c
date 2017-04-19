@@ -1,4 +1,4 @@
-
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -51,6 +51,76 @@ static inline void frac_coord(int grid_size, int kernel_size, int oversample,
         (flx+grid_size/2-kernel_size/2);
     *sub_offset = kernel_size * kernel_size * (yf*oversample + xf);
 }
+
+
+
+static inline void printkernel(double complex *kernel, int size_x, int size_y){
+
+    int i,j;
+    for(j=0;j<size_y;j++){
+        for(i=0;i<size_x;i++){
+            printf("%.2f+%.2f ",creal(*(kernel+j*size_x + i)),cimag(*(kernel+j*size_x+i)));
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+static inline void initkernel(double complex *kernel, int size_x, int size_y, double complex init_value){
+
+    int i,j;
+    for(j=0;j<size_y;j++){
+        for(i=0;i<size_x;i++){
+            *(kernel + j*size_x + i) = init_value;
+        }
+    }
+
+
+}
+
+
+void convolve2d_kernels(double complex *kernel1, double complex *kernel2, double complex *output_kernel, int d_in1_x, int d_in1_y, int d_in2_x, int d_in2_y, int d_out_x, int d_out_y){
+
+    //Set middle of output kernel to kernel1. Then we convolve over that kernel with kernel2.
+    //
+    //
+    //printf("Dimensions: %d, %d",d_in1_x,d_in1_y);
+    //printf("Still alive! \n");
+    int intk_x = d_out_x + (d_in2_x-1);
+    int intk_y = d_out_y + (d_in2_y-1);
+    double complex *intermediate_kernel = malloc(intk_x * intk_y * sizeof(double complex));
+    initkernel(intermediate_kernel,intk_x,intk_y,0+0i);
+    int i,j;
+
+    //printf("Still alive! \n");
+
+    for(j=(d_in2_y-1);j<(d_in2_y+(d_in1_y-1));j++){
+        for(i=(d_in2_x-1);i<(d_in2_x+(d_in1_x-1));i++){
+            *(intermediate_kernel+j*intk_x+i) = *(kernel1+(j-(d_in2_y-1))*d_in1_x+(i-(d_in2_x-1)));
+        }
+    }
+    
+    //printf("Intermediate Kernel: \n");
+//    printkernel(intermediate_kernel,intk_x,intk_y);
+
+    int ii,jj;
+    for(j=0;j<d_out_y;j++){
+        for(i=0;i<d_out_x;i++){
+
+            for(jj=0;jj<d_in2_y;jj++){
+                for(ii=0;ii<d_in2_x;ii++){
+                
+                   *(output_kernel+j*d_out_y+i)+= *(intermediate_kernel+(j+jj)*intk_x+(i+ii)) * *(kernel2+jj*d_in2_y+ii);
+                }
+            }
+        }
+    }
+
+    free(intermediate_kernel);
+
+
+}
+
 
 void weight(unsigned int *wgrid, int grid_size, double theta,
             struct vis_data *vis) {
@@ -129,6 +199,9 @@ uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
 }
 
 
+
+
+
 void convolve_aw_kernels(struct bl_data *bl,
                          struct w_kernel_data *wkern,
                          struct a_kernel_data *akern) {
@@ -160,31 +233,27 @@ void convolve_aw_kernels(struct bl_data *bl,
             struct w_kernel *wk = &wkern->kern_by_w[w_plane];
 
             // James Kent: this is my stab at convolving the kernels. Not sure if it is right yet
-            // TODO: Verify this. Write small scale version. 
-            double complex *a3k = malloc(akern->size_x * akern->size_y * sizeof(double complex));
-            int x,y;
-            for (y = 0; y < akern->size_y;y++){
-                for(x = 0; x < akern->size_x;x++){
-                    *(a3k+y*akern->size_x+x) = *(a1k->data+y*akern->size_x+x) * *(a2k->data+(y*akern->size_x - x)+(x-y));
+            // TODO: Implement oversampling.
+            int output_size_x = size_x*2 -1;
+            int output_size_y = size_y*2 -1;
+            double complex *a1a2i = malloc(output_size_x*output_size_y*sizeof(double complex));
+            convolve2d_kernels(a1k->data,a2k->data,a1a2i,size_x,size_y,size_x,size_y,output_size_x,output_size_y);
 
-                }
-            }
-            double complex *awk = malloc(akern->size_x * wkern->size_y * sizeof(double complex));
+            int output_size_x_awk = output_size_x+(size_x-1);
+            int output_size_y_awk = output_size_y+(size_y-1);
+            double complex *awk = malloc(output_size_x_awk*output_size_y_awk*sizeof(double complex));
+            //printf("Calculating second convolution kernel");
+            convolve2d_kernels(a1a2i,wk->data,awk,output_size_x,output_size_y,size_x,size_y,output_size_x_awk,output_size_y_awk);
+            //printf("Calculated awkern size: %d",awkern_size);
+            //printf("My awkern size!: %d", output_size_x_awk*output_size_y_awk);
 
-            for (y =0; y < wkern->size_y;y++){
-                for(x = 0; x<akern->size_x;x++){
-                    *(awk + y*akern->size_x + x) = *(a3k + y*akern->size_x+x) * *(wk->data+(y*akern->size_x -x) + (x-y));
-                }
-            }
-            
 
-            
             memcpy(&bl->awkern[(time * akern->freq_count + freq) * awkern_size],
                    awk,
-                   awkern_size * sizeof(double complex));
-
+                   (output_size_x_awk*output_size_y_awk) * sizeof(double complex));
+    
+            free(a1a2i);
             free(awk);
-            free(a3k);
 
         }
     }
