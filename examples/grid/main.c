@@ -11,6 +11,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <time.h>
+#include <sys/time.h>
 #include <complex.h>
 #include <fftw3.h>
 
@@ -19,6 +21,11 @@
 #define NUM_THREADS 8
 
 int main(int argc, char *argv[]) {
+    
+    struct timeval time1;
+    struct timeval time2;
+
+    gettimeofday(&time1,NULL);
 
     // Read parameters
     static struct option options[] =
@@ -234,6 +241,8 @@ int main(int argc, char *argv[]) {
         }
         close(image_fd);
     }
+    gettimeofday(&time2,NULL);
 
+    printf("\n Time taken: %f \n",((double)time2.tv_sec+(double)time2.tv_usec * .000001)-((double)time1.tv_sec+(double)time1.tv_usec * .000001));
     return 0;
 }

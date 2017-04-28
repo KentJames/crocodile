@@ -5,10 +5,12 @@ stdenv.mkDerivation rec {
   env = buildEnv { name = name;
                   paths = buildInputs; };
   buildInputs = [
-    gcc6
+    gcc-snapshot
     fftw
     hdf5
     astropy
+    graphviz
+    kdeApplications.kcachegrind
     python35Packages.h5py
     python35Packages.scipy
     python35Packages.numpy

@@ -5,7 +5,8 @@
 #include <assert.h>
 #include <float.h>
 #include <stdint.h>
-
+#include <time.h>
+#include <sys/time.h>
 #include "grid.h"
 
 // Assume all uvw are zero. This eliminates all coordinate
@@ -303,10 +304,37 @@ uint64_t grid_awprojection(double complex *uvgrid, int grid_size, double theta,
     return flops;
 }
 
-void make_hermitian(double complex *uvgrid, int grid_size) {
+void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
 
     // Determine start index. For even-sized grids, the zero frequency
     // is at grid_size/2, so things are off by one.
+    //
+    struct timeval time1;
+    struct timeval time2;
+
+    gettimeofday(&time1,NULL);
+
+#ifdef OPT_LOOP
+    int i;
+    if(grid_size % 2 == 0){
+        i = grid_size + 1;
+    } else {
+        i = 0;
+    }    
+
+
+    const int g = grid_size * grid_size;
+    for(i;i<=((grid_size+1)*(grid_size/2));i++){
+    
+    double complex g0 = uvgrid[i];
+    uvgrid[i] += conj(uvgrid[g-i-1]);
+    uvgrid[g-i-1] += conj(g0);
+
+    }
+
+#else
+
+
     complex double *p0;
     if (grid_size % 2 == 0) {
         p0 = uvgrid + grid_size + 1;
@@ -314,7 +342,6 @@ void make_hermitian(double complex *uvgrid, int grid_size) {
         p0 = uvgrid;
     }
     complex double *p1 = uvgrid + grid_size * grid_size - 1;
-
     // Now simply add cells from the other side of the grid
     while(p0 < p1) {
         double complex g0 = *p0;
@@ -325,7 +352,9 @@ void make_hermitian(double complex *uvgrid, int grid_size) {
     // Should end up exactly on the zero frequency
     assert( p0 == p1 && p0 == uvgrid + (grid_size+1) * (grid_size/2) );
     *p0 += conj(*p0);
-
+#endif
+    gettimeofday(&time2,NULL);
+    printf("Hermitian Time Taken: %f \n", ((double)time2.tv_sec+(double)time2.tv_usec * .000001)-((double)time1.tv_sec+(double)time1.tv_usec * .000001));
 }
 
 
