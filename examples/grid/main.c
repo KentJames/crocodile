@@ -18,7 +18,6 @@
 
 #include "grid.h"
 
-#define NUM_THREADS 8
 
 int main(int argc, char *argv[]) {
     
@@ -38,6 +37,7 @@ int main(int argc, char *argv[]) {
         {"image",   optional_argument, 0, 'i' },
         {"min-bl",  optional_argument, 0, 'b' },
         {"max-bl",  optional_argument, 0, 'B' },
+        {"threads", optional_argument, 0, 'P' },
         {0, 0, 0, 0}
       };
     int option_index = 0;
@@ -45,6 +45,7 @@ int main(int argc, char *argv[]) {
     char *wkern_file = NULL, *akern_file = NULL,
          *grid_file = NULL, *image_file = NULL;
     double bl_min = DBL_MIN, bl_max = DBL_MAX;
+    int threads=1;
     int c; int invalid = 0;
     while ((c = getopt_long(argc, argv, ":", options, &option_index)) != -1) {
         switch(c) {
@@ -56,6 +57,7 @@ int main(int argc, char *argv[]) {
         case 'i': image_file = optarg; break;
         case 'b': bl_min = atof(optarg); break;
         case 'B': bl_max = atof(optarg); break;
+        case 'P': threads = atol(optarg); break;
         default: invalid = 1; break;
         }
     }
@@ -91,6 +93,7 @@ int main(int argc, char *argv[]) {
         printf("  --akern=AKERN         A-kernel file to use for w-projection\n");
         printf("  --min-bl=MIN_BL       Minimum baseline length to consider (in km)\n");
         printf("  --max-bl=MAX_BL       Maximum baseline length to consider (in km)\n");
+        printf("  --threads=THREADS     Number of threads to parallelise for\n");
         printf("positional arguments:\n");
         printf("  input                 input visibilities\n");
         return 1;
@@ -221,7 +224,7 @@ int main(int argc, char *argv[]) {
         //
         fftw_init_threads();
         fftw_plan plan;
-        fftw_plan_with_nthreads(NUM_THREADS);
+        fftw_plan_with_nthreads(threads);
         plan = fftw_plan_dft_2d(grid_size, grid_size, uvgrid, uvgrid, -1, FFTW_ESTIMATE);
         fftw_execute_dft(plan, uvgrid, uvgrid);
 

@@ -314,23 +314,38 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
 
     gettimeofday(&time1,NULL);
 
+
+
 #ifdef OPT_LOOP
-    int i;
-    if(grid_size % 2 == 0){
-        i = grid_size + 1;
-    } else {
-        i = 0;
-    }    
-
-
-    const int g = grid_size * grid_size;
-    for(i;i<=((grid_size+1)*(grid_size/2));i++){
     
-    double complex g0 = uvgrid[i];
-    uvgrid[i] += conj(uvgrid[g-i-1]);
-    uvgrid[g-i-1] += conj(g0);
+
+    int i_s = 0;
+    int lb;
+    if (grid_size % 2 == 0) {
+        i_s = grid_size + 1;
+        lb = ((grid_size*grid_size)-24000)/2; 
+    } else {
+        i_s = 0;
+        lb = (grid_size*grid_size)/2;
 
     }
+
+    int gs = grid_size*grid_size-1;
+    int i; // Loop iterator
+#pragma omp parallel for
+    for(i=0;i<(lb-1);i++){
+        double complex g0 = uvgrid[i+i_s];
+        uvgrid[i+i_s] = conj(uvgrid[gs-i]);
+        uvgrid[gs-i] = conj(g0);
+    }
+
+    // Should end up exactly on the zero frequency. Left comments in below for debugging.
+//    printf("is: %d \n",i_s);
+//    printf("Expected end point: %d \n",(grid_size+1)*(grid_size/2));
+//    printf("My end point: %d \n \n",(i+i_s));
+//    printf("gs-i: %d \n \n",gs-i);
+//    assert( (i+i_s) == (gs-i) && (i+i_s) == (grid_size+1) * (grid_size/2) );
+    uvgrid[(grid_size+1)*(grid_size/2)] += conj(uvgrid[i]);
 
 #else
 
