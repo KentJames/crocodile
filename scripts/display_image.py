@@ -3,6 +3,7 @@ import os
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
+
 import argparse
 import h5py
 import numpy
@@ -38,6 +39,5 @@ else:
     img = img.reshape(24000,24000)
     img = img[6000:18000,6000:18000]
     print(img.shape)
-    print(img[12000:12010,12000:12010])
     util.visualize.show_image(img,"result",args.theta)
 

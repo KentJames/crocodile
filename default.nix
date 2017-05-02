@@ -11,13 +11,13 @@ stdenv.mkDerivation rec {
     astropy
     graphviz
     kdeApplications.kcachegrind
+    python35
+    python35Packages.pylru
     python35Packages.h5py
     python35Packages.scipy
     python35Packages.numpy
-    python35Packages.pylru
     valgrind
     fftwFloat
-    python35
   ];
 }
 
