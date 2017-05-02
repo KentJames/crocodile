@@ -11,4 +11,4 @@ all:
 	$(CC) -o gridder.out main.o hdf5.o perf.o grid.o $(LFLAGS)
 
 test: 
-	./gridder.out --theta=0.08 --lambda=300000 --image=image.out --wkern=../../data/kernels/SKA1_Low_wkern.h5 ../../data/vis/SKA1_Low_quick.h5
+	./gridder.out --threads=12 --theta=0.08 --lambda=300000 --image=image.out --wkern=../../data/kernels/SKA1_Low_wkern.h5 ../../data/vis/SKA1_Low_quick.h5
