@@ -316,7 +316,7 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
 
 
 
-#ifdef OPT_LOOP
+#ifdef OPT_OMP
     
 
     int i_s = 0;
@@ -335,8 +335,8 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
 #pragma omp parallel for
     for(i=0;i<(lb-1);i++){
         double complex g0 = uvgrid[i+i_s];
-        uvgrid[i+i_s] = conj(uvgrid[gs-i]);
-        uvgrid[gs-i] = conj(g0);
+        uvgrid[i+i_s] += conj(uvgrid[gs-i]);
+        uvgrid[gs-i] += conj(g0);
     }
 
     // Should end up exactly on the zero frequency. Left comments in below for debugging.
@@ -375,10 +375,17 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
 
 void fft_shift(double complex *uvgrid, int grid_size) {
 
+    struct timeval time1;
+    struct timeval time2;
+
+    gettimeofday(&time1,NULL);
     // Shift the FFT
     assert(grid_size % 2 == 0);
     int x, y;
     for (y = 0; y < grid_size; y++) {
+#ifdef OPT_OMP
+#   pragma omp parallel for
+#endif
         for (x = 0; x < grid_size/2; x++) {
             int ix0 = y * grid_size + x;
             int ix1 = (ix0 + (grid_size+1) * (grid_size/2)) % (grid_size*grid_size);
@@ -387,5 +394,8 @@ void fft_shift(double complex *uvgrid, int grid_size) {
             uvgrid[ix1] = temp;
         }
     }
+
+    gettimeofday(&time2,NULL);
+    printf("FFT Shift Time Taken: %f \n", ((double)time2.tv_sec+(double)time2.tv_usec * .000001)-((double)time1.tv_sec+(double)time1.tv_usec * .000001));
 
 }
