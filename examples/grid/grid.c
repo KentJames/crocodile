@@ -306,9 +306,6 @@ uint64_t grid_awprojection(double complex *uvgrid, int grid_size, double theta,
 
 void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
 
-    // Determine start index. For even-sized grids, the zero frequency
-    // is at grid_size/2, so things are off by one.
-    //
     struct timeval time1;
     struct timeval time2;
 
@@ -318,38 +315,104 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
 
 #ifdef OPT_OMP
     
+#   ifdef _ARM_FEATURE_SVE
 
-    int i_s = 0;
-    int lb;
-    if (grid_size % 2 == 0) {
-        i_s = grid_size + 1;
-        lb = ((grid_size*grid_size)-24000)/2; 
-    } else {
-        i_s = 0;
-        lb = (grid_size*grid_size)/2;
+        int i_s = 0;
+        int lb;
+        if (grid_size % 2 == 0) {
+            i_s = grid_size + 1;
+            lb = ((grid_size*grid_size)-24000)/2; 
+        } else {
+            i_s = 0;
+            lb = (grid_size*grid_size)/2;
 
-    }
+        }
 
-    int gs = grid_size*grid_size-1;
-    int i; // Loop iterator
-#pragma omp parallel for
-    for(i=0;i<(lb-1);i++){
-        double complex g0 = uvgrid[i+i_s];
-        uvgrid[i+i_s] += conj(uvgrid[gs-i]);
-        uvgrid[gs-i] += conj(g0);
-    }
+        int gs = grid_size*grid_size-1;
+        int i; // Loop iterator
+        
 
-    // Should end up exactly on the zero frequency. Left comments in below for debugging.
-//    printf("is: %d \n",i_s);
-//    printf("Expected end point: %d \n",(grid_size+1)*(grid_size/2));
-//    printf("My end point: %d \n \n",(i+i_s));
-//    printf("gs-i: %d \n \n",gs-i);
-//    assert( (i+i_s) == (gs-i) && (i+i_s) == (grid_size+1) * (grid_size/2) );
-    uvgrid[(grid_size+1)*(grid_size/2)] += conj(uvgrid[i]);
+        printf("Vector Width: %d", vl); 
+        svbool_t pg_t = svptrue_b64(); //Used for straight vector load of p0.
+        svbool_t pg_f = svpfalse(); //Will interleave this with pg_t to create FNeg predicate.
+        svbool_t pg_ft = svzip1_b64(pg_f,pg_t); //Interleaved False/True/False/True.. predicate.
 
+        // Generate indexes for gather/scatter operations.
+        uint64_t *igm = malloc(sizeof(uint64_t)*vl);
+        for(int i = 0; i < vl - 1; i += 2 ) {
+            igm[i] = vl - i - 2;
+            igm[i+1] = vl - i - 1;
+            printf("Index %d: %d %d \n",i,igm[i],igm[i+1]);
+
+        }
+        svuint64_t ig = svld1_u64(pg_t,igm); // Put indexes in SVE format.
+
+
+        int gs = grid_size*grid_size - 1;
+        int i;
+#       pragma omp parallel for
+        for(i=0;i<(lb-(vl/2)-1);i+=(vl/2)){
+            //Load the first sub array of complex numbers. 
+            //Cast pointer as a double, as doubles complex is just interleaved(Re/Im/Re/Im.. etc)  doubles
+            svfloat64_t subm1 = svld1(pg_t,(double *)&uvgrid[i]); 
+            //Gather Load p1 into vector register using indexes
+            svfloat64_t subm2 = svld1_gather_index(pg_t,(double *)&uvgrid[gs-i-(vl/2)],ig); //Gather load.
+
+            //Negate imaginary values and add to other side of grid, then store in memory.
+            svfloat64_t subm_neg = svneg_m(subm2, pg_ft,subm2); 
+            svfloat64_t subm_add = svadd_m(pg_t,subm1,subm_neg);
+            svst1(pg_t, (double*)&uvgrid[i], subm_add);
+
+            //Negate  imaginary values and to other side of grid, then store in memory
+            subm_neg = svneg_m(subm1, pg_ft, subm1);
+            subm_add = svadd_m(pg_t,subm2,subm_neg);
+            svst1_scatter_index(pg_t, (double*)&uvgrid[gs-i-(vl/2)],ig,subm_add); //Scatter store.       
+        }
+        // Whatever doesn't fit into SVE registers we just iterate through in serial. 
+        for(;i<(lb-1);i++){
+            double complex g0 = uvgrid[i+i_s];
+            uvgrid[i+i_s] = conj(uvgrid[gs-i]);
+            uvgrid[gs-i] = conj(g0);
+
+        }
+        // Should end up on zero frequency, fingers crossed!
+        assert( (i+i_s) == (gs-i) && (i+i_s) == (grid_size+1) * (grid_size/2) );
+        uvgrid[(grid_size+1)*(grid_size/2)] += conj(uvgrid[i]);
+#   else
+
+        printf("OMP Hermitian Shift \n");
+        int i_s = 0;
+        int lb;
+        if (grid_size % 2 == 0) {
+            i_s = grid_size + 1;
+            lb = ((grid_size*grid_size)-24000)/2; 
+        } else {
+            i_s = 0;
+            lb = (grid_size*grid_size)/2;
+
+        }
+
+        int gs = grid_size*grid_size-1;
+        int i; // Loop iterator
+#       pragma omp parallel for
+        for(i=0;i<(lb-1);i++){
+            double complex g0 = uvgrid[i+i_s];
+            uvgrid[i+i_s] += conj(uvgrid[gs-i]);
+            uvgrid[gs-i] += conj(g0);
+        }
+
+        // Should end up exactly on the zero frequency. Left comments in below for debugging.
+    //    printf("is: %d \n",i_s);
+    //    printf("Expected end point: %d \n",(grid_size+1)*(grid_size/2));
+    //    printf("My end point: %d \n \n",(i+i_s));
+    //    printf("gs-i: %d \n \n",gs-i);
+    //    assert( (i+i_s) == (gs-i) && (i+i_s) == (grid_size+1) * (grid_size/2) );
+        uvgrid[(grid_size+1)*(grid_size/2)] += conj(uvgrid[i]);
+#   endif
 #else
 
 
+    printf("Non-OMP Hermitian Shift \n");
     complex double *p0;
     if (grid_size % 2 == 0) {
         p0 = uvgrid + grid_size + 1;

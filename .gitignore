@@ -6,13 +6,15 @@
 /.eggs
 /crocodile.egg-info
 
+
+callgrind.out.*
 *.pyc
 *.o
 *.s
 *.swp
 *.out
-/build
 
+/build
 /examples/**/*.rst
 /examples/**/*.html
 /examples/*/figures
