@@ -312,9 +312,9 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
     gettimeofday(&time1,NULL);
 
 
-
+//Optimised over reference implementation
 #ifdef OPT_OMP
-    
+// If running on aarch64 with SVE support, use intrinsics to leverage SVE registers.
 #   ifdef _ARM_FEATURE_SVE
 
         int i_s = 0;
@@ -353,7 +353,7 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
 #       pragma omp parallel for
         for(i=0;i<(lb-(vl/2)-1);i+=(vl/2)){
             //Load the first sub array of complex numbers. 
-            //Cast pointer as a double, as doubles complex is just interleaved(Re/Im/Re/Im.. etc)  doubles
+            //Cast pointer as a double, as double complex is just interleaved(Re/Im/Re/Im.. etc)  doubles
             svfloat64_t subm1 = svld1(pg_t,(double *)&uvgrid[i]); 
             //Gather Load p1 into vector register using indexes
             svfloat64_t subm2 = svld1_gather_index(pg_t,(double *)&uvgrid[gs-i-(vl/2)],ig); //Gather load.
