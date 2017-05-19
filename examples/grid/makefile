@@ -4,14 +4,14 @@ CFLAGS =
 LFLAGS = -g -lhdf5 -lm -lfftw3 -lfftw3_threads -lgomp
 
 
-all: gridder 
+all: gridder.out 
 
 
 clean: 
 		rm *.o
 		rm gridder.out
 
-gridder: main.o hdf5.o perf.o grid.o
+gridder.out: main.o hdf5.o perf.o grid.o
 		$(CC) main.o hdf5.o perf.o grid.o -o gridder.out $(LFLAGS)
 
 
@@ -30,5 +30,6 @@ grid.o: grid.c
 
 
 test: 
-	./gridder.out --threads=12 --theta=0.08 --lambda=300000 --image=image.out --wkern=../../data/kernels/SKA1_Low_wkern.h5 ../../data/vis/SKA1_Low_quick.h5
+	./gridder.out --threads=1 --theta=0.08 --lambda=300000 --image=image.out --wkern=../../data/kernels/SKA1_Low_wkern.h5 ../../data/vis/SKA1_Low_quick.h5
 
+.PHONY: all clean test
