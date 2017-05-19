@@ -15,6 +15,7 @@
 #include <sys/time.h>
 #include <complex.h>
 #include <fftw3.h>
+#include <omp.h>
 
 #include "grid.h"
 
@@ -25,6 +26,9 @@ int main(int argc, char *argv[]) {
     struct timeval time2;
 
     gettimeofday(&time1,NULL);
+
+    int number_of_cores = omp_get_num_procs();
+
 
     // Read parameters
     static struct option options[] =
@@ -137,12 +141,40 @@ int main(int argc, char *argv[]) {
 
     // Allocate grid
     printf("\nGrid size:    %d x %d (%.2f GB)\n", grid_size, grid_size, (double)(grid_byte_size)/1000000000);
-    double complex *uvgrid = (double complex *)calloc(grid_byte_size, 1);
+    double complex *uvgrid = (double complex *)calloc(grid_byte_size, 1); // Our parent grid.
+    double complex **uvgrid_cp=calloc(number_of_cores,sizeof(double complex **)); //Points to our individual arrays.
+
+    int i;
+    for(i=0;i<number_of_cores;i++){
+        uvgrid_cp[i] = calloc(grid_byte_size,1); //Allocate each subgrid.
+    }
+
+
 
     // Simple uniform weight (we re-use the grid to save an allocation)
+    // We weight with a single thread..
     printf("Weighting...\n");
     weight((unsigned int *)uvgrid, grid_size, theta, &vis);
     memset(uvgrid, 0, grid_size * grid_size * sizeof(unsigned int));
+
+
+    //Lets split up our visibilities to distribute amongst the threads..
+    int rem = vis.bl_count % number_of_cores;
+    int vis_per_core = vis.bl_count / number_of_cores; 
+
+    struct vis_data *vis_cp=calloc(number_of_cores,sizeof(struct vis_data));
+    //printf("Time data: %d Baseline data: %d",vis.time_count,vis.bl_count);
+    // Splits up the visibility data into subsets that can be gridded onto the sub-grids.
+    for(i=0;i<(number_of_cores-1);i++){
+        vis_cp[i].bl = calloc(vis_per_core,sizeof(struct bl_data));
+        vis_cp[i].bl_count = vis_per_core;
+        memcpy(vis_cp[i].bl,&vis.bl[i*vis_per_core],vis_per_core * sizeof(struct bl_data));
+    }
+    vis_cp[number_of_cores-1].bl = calloc(vis_per_core + rem,sizeof(struct bl_data));
+    vis_cp[number_of_cores -1].bl_count = vis_per_core+1;
+    memcpy(vis_cp[i].bl,&vis.bl[(number_of_cores -1)*vis_per_core],vis_per_core*sizeof(struct bl_data));
+
+
 
     // Set up performance counters
     struct perf_counters counters;
@@ -159,7 +191,27 @@ int main(int argc, char *argv[]) {
     } else if (!akern_file) {
         printf("Gridder: W-projection\n");
         enable_perf_counters(&counters);
-        flops = grid_wprojection(uvgrid, grid_size, theta, &vis, &wkern);
+#pragma omp parallel for
+        for(i=0;i<number_of_cores;i++){
+            printf("Grid %d \n",i);
+            flops = grid_wprojection(uvgrid_cp[i], grid_size, theta, &vis_cp[i], &wkern);
+        }
+#pragma omp parallel for
+        for(i=0;i<number_of_cores;i++){
+            int j;
+            printf("Grid %d \n",i);
+            for(j=0;j<(grid_size*grid_size);j++){
+                uvgrid[j] += *(*(uvgrid_cp+i)+j);
+            }
+
+        }
+
+        for(i=0;i<number_of_cores;i++){
+            free(uvgrid_cp[i]);
+        }
+        free(vis_cp);
+        free(uvgrid_cp);
+
         disable_perf_counters(&counters);
         // Assuming 10 flop/B
         mem = flops / 10;
