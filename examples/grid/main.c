@@ -161,7 +161,7 @@ int main(int argc, char *argv[]) {
     //Lets split up our visibilities to distribute amongst the threads..
     int rem = vis.bl_count % number_of_cores;
     int vis_per_core = vis.bl_count / number_of_cores; 
-
+    printf("Remainder visibilities: %d\n",rem);
     struct vis_data *vis_cp=calloc(number_of_cores,sizeof(struct vis_data));
     //printf("Time data: %d Baseline data: %d",vis.time_count,vis.bl_count);
     // Splits up the visibility data into subsets that can be gridded onto the sub-grids.
@@ -171,8 +171,8 @@ int main(int argc, char *argv[]) {
         memcpy(vis_cp[i].bl,&vis.bl[i*vis_per_core],vis_per_core * sizeof(struct bl_data));
     }
     vis_cp[number_of_cores-1].bl = calloc(vis_per_core + rem,sizeof(struct bl_data));
-    vis_cp[number_of_cores -1].bl_count = vis_per_core+1;
-    memcpy(vis_cp[i].bl,&vis.bl[(number_of_cores -1)*vis_per_core],vis_per_core*sizeof(struct bl_data));
+    vis_cp[number_of_cores -1].bl_count = vis_per_core+rem;
+    memcpy(vis_cp[i].bl,&vis.bl[(number_of_cores -1)*vis_per_core],(vis_per_core+rem)*sizeof(struct bl_data));
 
 
 
@@ -191,19 +191,16 @@ int main(int argc, char *argv[]) {
     } else if (!akern_file) {
         printf("Gridder: W-projection\n");
         enable_perf_counters(&counters);
-#pragma omp parallel for
+#       pragma omp parallel for
         for(i=0;i<number_of_cores;i++){
-            printf("Grid %d \n",i);
-            flops = grid_wprojection(uvgrid_cp[i], grid_size, theta, &vis_cp[i], &wkern);
+            flops += grid_wprojection(uvgrid_cp[i], grid_size, theta, &vis_cp[i], &wkern);
         }
-#pragma omp parallel for
+#       pragma omp parallel for
         for(i=0;i<number_of_cores;i++){
             int j;
-            printf("Grid %d \n",i);
             for(j=0;j<(grid_size*grid_size);j++){
                 uvgrid[j] += *(*(uvgrid_cp+i)+j);
             }
-
         }
 
         for(i=0;i<number_of_cores;i++){
@@ -230,10 +227,11 @@ int main(int argc, char *argv[]) {
             int bl;
             for (bl = bl_min; bl < bl_max; bl++) {
                 convolve_aw_kernels(&vis.bl[bl], &wkern, &akern);
-            }
+            }            
 
             // Do convolution
             enable_perf_counters(&counters);
+            
             flops += grid_awprojection(uvgrid, grid_size, theta, &vis, &wkern, &akern, bl_min, bl_max);
             disable_perf_counters(&counters);
 
