@@ -19,6 +19,18 @@
 
 #include "grid.h"
 
+//Returns the baseline distance. Used for qsort. 
+int uv_delta(const void * a, const void * b){
+
+    struct bl_data *baselineA = (struct bl_data *)a;
+    struct bl_data *baselineB = (struct bl_data *)b;
+
+    return( (sqrt(pow(baselineB->uvw[0],2) + pow(baselineB->uvw[1],2))) 
+            - (sqrt(pow(baselineA->uvw[0],2) + pow(baselineA->uvw[1],2)))   ); //sorts longest baselines first
+    //return( (sqrt(pow(baselineA->uvw[0],2) + pow(baselineA->uvw[1],2))) 
+    //- (sqrt(pow(baselineB->uvw[0],2) + pow(baselineB->uvw[1],2)))   ); //qsorts shortest baselines first
+}
+
 
 int main(int argc, char *argv[]) {
     
@@ -148,33 +160,87 @@ int main(int argc, char *argv[]) {
     for(i=0;i<threads;i++){
         uvgrid_cp[i] = calloc(grid_byte_size,1); //Allocate each subgrid.
     }
-
-
-
+    // Sort visibilities in terms of baseline length, which is directly proportional to compute cost.
+    printf("Sorting visibilities... \n");
+    qsort(vis.bl,vis.bl_count,sizeof(struct bl_data),uv_delta);
+    
     // Simple uniform weight (we re-use the grid to save an allocation)
     // We weight with a single thread..
     printf("Weighting...\n");
     weight((unsigned int *)uvgrid, grid_size, theta, &vis);
     memset(uvgrid, 0, grid_size * grid_size * sizeof(unsigned int));
 
+    int bl_ind[threads]; //Indices for dividing the visibility array
+    int bl_per_core_t[threads]; //BL per core
+
+
+   /* // Load spreading attempt one: Using 2Vn/(threads+n) : Not good enough. 
+    for(i=0;i<threads;i++){
+        bl_ind[i] = (2 * vis.bl_count * i) / (threads + i);
+    }
+    for(i=0;i<threads;i++){
+        if(i<threads-1){
+            bl_per_core_t[i] = bl_ind[i+1] - bl_ind[i];
+        }  
+        else {
+            bl_per_core_t[i] = vis.bl_count - bl_ind[i] - 1;
+        }
+    }
+
+    */
+
+
+    
+    // Load spreading attempt two: Using the fibonacci sequence. Works quite well on 4-8 threads.
+    if(threads==1){
+        bl_per_core_t[0] = vis.bl_count;
+    }
+    else{
+
+        int sum;
+        int fibonacci[threads];
+        fibonacci[0] = 1;
+        fibonacci[1] = 3;
+        sum = fibonacci[0]+fibonacci[1];
+        for(i=2;i<threads;i++){
+            fibonacci[i] = fibonacci[i-1] + fibonacci[i-2];
+            sum += fibonacci[i];
+        }
+
+        int bl_agg = vis.bl_count / sum;
+        int bl_rem = vis.bl_count % sum;
+        //printf("BL Agg: %d Sum Fib: %d\n",bl_agg,sum);
+
+
+        for(i=0;i<threads;i++){   
+            if(i<threads-1){
+                bl_per_core_t[i] = bl_agg * fibonacci[i];
+            } 
+            else{
+                bl_per_core_t[i] = bl_agg * fibonacci[i] + bl_rem;
+            }
+            //printf("BL Per Core: %d\n",bl_per_core_t[i]);
+        }
+        int agg = 0;
+        for(i=0;i<threads;i++){
+            bl_ind[i] = agg;
+            agg += bl_per_core_t[i];
+            //printf("Indice: %d\n",bl_ind[i]);
+        }
+    }
+
 
     //Lets split up our visibilities to distribute amongst the threads..
-    int rem = vis.bl_count % threads;
-    int bl_per_core = vis.bl_count / threads; 
-    printf("Bl per core: %d \nRemainder visibilities: %d\n",bl_per_core,rem);
     struct vis_data *vis_cp=calloc(threads,sizeof(struct vis_data));
-    //printf("Time data: %d Baseline data: %d",vis.time_count,vis.bl_count);
-    // Splits up the visibility data into subsets that can be gridded onto the sub-grids.
-    for(i=0;i<(threads-1);i++){
-        vis_cp[i].bl = calloc(bl_per_core,sizeof(struct bl_data));
-        vis_cp[i].bl_count = bl_per_core;
-        memcpy(vis_cp[i].bl,&vis.bl[i*bl_per_core],bl_per_core * sizeof(struct bl_data));
+
+    for(i=0;i<(threads);i++){
+        vis_cp[i].bl = calloc(bl_per_core_t[i],sizeof(struct bl_data));
+        vis_cp[i].bl_count = bl_per_core_t[i];
+        memcpy(vis_cp[i].bl,&vis.bl[bl_ind[i]],bl_per_core_t[i] * sizeof(struct bl_data));
     }
-    vis_cp[threads-1].bl = calloc(bl_per_core + rem,sizeof(struct bl_data));
-    vis_cp[threads -1].bl_count = bl_per_core+rem;
-    memcpy(vis_cp[i].bl,&vis.bl[(threads -1)*bl_per_core],(bl_per_core+rem)*sizeof(struct bl_data));
 
 
+    struct timeval proj1,proj2,proj3;
 
     // Set up performance counters
     struct perf_counters counters;
@@ -189,12 +255,16 @@ int main(int argc, char *argv[]) {
         // Assuming 0.5 flop/B
         mem = flops * 2;
     } else if (!akern_file) {
+
+        gettimeofday(&proj1,NULL);
         printf("Gridder: W-projection\n");
         enable_perf_counters(&counters);
 #       pragma omp parallel for
         for(i=0;i<threads;i++){
             flops += grid_wprojection(uvgrid_cp[i], grid_size, theta, &vis_cp[i], &wkern);
+            printf("Thread %d completed.\n",i);
         }
+        gettimeofday(&proj2,NULL);
 #       pragma omp parallel for
         for(i=0;i<threads;i++){
             int j;
@@ -208,8 +278,13 @@ int main(int argc, char *argv[]) {
         }
         free(vis_cp);
         free(uvgrid_cp);
-
+        
         disable_perf_counters(&counters);
+        gettimeofday(&proj3,NULL);
+
+        printf("\n Projection Time taken: %f \n",((double)proj2.tv_sec+(double)proj2.tv_usec * .000001)-((double)proj1.tv_sec+(double)proj1.tv_usec * .000001));
+        printf("\n Reduction Time taken: %f \n",((double)proj3.tv_sec+(double)proj3.tv_usec * .000001)-((double)proj2.tv_sec+(double)proj2.tv_usec * .000001));
+        printf("\n Total time taken: %f \n",((double)proj3.tv_sec+(double)proj3.tv_usec * .000001)-((double)proj1.tv_sec+(double)proj1.tv_usec * .000001));
         // Assuming 10 flop/B
         mem = flops / 10;
     } else {
