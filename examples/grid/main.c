@@ -25,10 +25,10 @@ int uv_delta(const void * a, const void * b){
     struct bl_data *baselineA = (struct bl_data *)a;
     struct bl_data *baselineB = (struct bl_data *)b;
 
-    return( (sqrt(pow(baselineB->uvw[0],2) + pow(baselineB->uvw[1],2))) 
-            - (sqrt(pow(baselineA->uvw[0],2) + pow(baselineA->uvw[1],2)))   ); //sorts longest baselines first
-    //return( (sqrt(pow(baselineA->uvw[0],2) + pow(baselineA->uvw[1],2))) 
-    //- (sqrt(pow(baselineB->uvw[0],2) + pow(baselineB->uvw[1],2)))   ); //qsorts shortest baselines first
+    //return( (sqrt(pow(baselineB->uvw[0],2) + pow(baselineB->uvw[1],2))) 
+            //- (sqrt(pow(baselineA->uvw[0],2) + pow(baselineA->uvw[1],2)))   ); //qsorts longest baselines first
+    return( (sqrt(pow(baselineA->uvw[0],2) + pow(baselineA->uvw[1],2))) 
+            - (sqrt(pow(baselineB->uvw[0],2) + pow(baselineB->uvw[1],2)))   ); //qsorts shortest baselines first
 }
 
 
@@ -56,6 +56,8 @@ int main(int argc, char *argv[]) {
         {"threads", optional_argument, 0, 'P' },
         {0, 0, 0, 0}
       };
+
+    int i;
     int option_index = 0;
     double theta = 0, lambda = 0;
     char *wkern_file = NULL, *akern_file = NULL,
@@ -85,6 +87,8 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Invalid grid configuration!\n");
         invalid = 1;
     }
+
+    
 
     // Must have an input file
     const char *vis_file = 0;
@@ -154,12 +158,11 @@ int main(int argc, char *argv[]) {
     // Allocate grid
     printf("\nGrid size:    %d x %d (%.2f GB)\n", grid_size, grid_size, (double)(grid_byte_size)/1000000000);
     double complex *uvgrid = (double complex *)calloc(grid_byte_size, 1); // Our parent grid.
-    double complex **uvgrid_cp=calloc(threads,sizeof(double complex **)); //Points to our individual arrays.
+    //double complex **uvgrid_cp=calloc(threads,sizeof(double complex **)); //Points to our individual arrays.
 
-    int i;
-    for(i=0;i<threads;i++){
+    /*for(i=0;i<threads;i++){
         uvgrid_cp[i] = calloc(grid_byte_size,1); //Allocate each subgrid.
-    }
+    }*/
     // Sort visibilities in terms of baseline length, which is directly proportional to compute cost.
     printf("Sorting visibilities... \n");
     qsort(vis.bl,vis.bl_count,sizeof(struct bl_data),uv_delta);
@@ -170,9 +173,8 @@ int main(int argc, char *argv[]) {
     weight((unsigned int *)uvgrid, grid_size, theta, &vis);
     memset(uvgrid, 0, grid_size * grid_size * sizeof(unsigned int));
 
-    int bl_ind[threads]; //Indices for dividing the visibility array
-    int bl_per_core_t[threads]; //BL per core
-
+  //  int bl_ind[threads]; //Indices for dividing the visibility array
+  //  int bl_per_core_t[threads]; //BL per core
 
    /* // Load spreading attempt one: Using 2Vn/(threads+n) : Not good enough. 
     for(i=0;i<threads;i++){
@@ -185,12 +187,8 @@ int main(int argc, char *argv[]) {
         else {
             bl_per_core_t[i] = vis.bl_count - bl_ind[i] - 1;
         }
-    }
-
-    */
-
-
-    
+    } */
+/*    
     // Load spreading attempt two: Using the fibonacci sequence. Works quite well on 4-8 threads.
     if(threads==1){
         bl_per_core_t[0] = vis.bl_count;
@@ -239,7 +237,7 @@ int main(int argc, char *argv[]) {
         memcpy(vis_cp[i].bl,&vis.bl[bl_ind[i]],bl_per_core_t[i] * sizeof(struct bl_data));
     }
 
-
+*/
     struct timeval proj1,proj2,proj3;
 
     // Set up performance counters
@@ -259,25 +257,8 @@ int main(int argc, char *argv[]) {
         gettimeofday(&proj1,NULL);
         printf("Gridder: W-projection\n");
         enable_perf_counters(&counters);
-#       pragma omp parallel for
-        for(i=0;i<threads;i++){
-            flops += grid_wprojection(uvgrid_cp[i], grid_size, theta, &vis_cp[i], &wkern);
-            printf("Thread %d completed.\n",i);
-        }
+        flops += grid_wprojection(uvgrid, grid_size, theta, &vis, &wkern);
         gettimeofday(&proj2,NULL);
-#       pragma omp parallel for
-        for(i=0;i<threads;i++){
-            int j;
-            for(j=0;j<(grid_size*grid_size);j++){
-                uvgrid[j] += *(*(uvgrid_cp+i)+j);
-            }
-        }
-
-        for(i=0;i<threads;i++){
-            free(uvgrid_cp[i]);
-        }
-        free(vis_cp);
-        free(uvgrid_cp);
         
         disable_perf_counters(&counters);
         gettimeofday(&proj3,NULL);
@@ -372,5 +353,7 @@ int main(int argc, char *argv[]) {
     gettimeofday(&time2,NULL);
 
     printf("\n Time taken: %f \n",((double)time2.tv_sec+(double)time2.tv_usec * .000001)-((double)time1.tv_sec+(double)time1.tv_usec * .000001));
+
+
     return 0;
 }

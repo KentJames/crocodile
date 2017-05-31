@@ -119,7 +119,6 @@ void convolve2d_kernels(double complex *kernel1, double complex *kernel2, double
 
     free(intermediate_kernel);
 
-
 }
 
 
@@ -140,12 +139,12 @@ void weight(unsigned int *wgrid, int grid_size, double theta,
         for (time = 0; time < vis->bl[bl].time_count; time++) {
             for (freq = 0; freq < vis->bl[bl].freq_count; freq++) {
                 vis->bl[bl].vis[time*vis->bl[bl].freq_count + freq]
-                    /= wgrid[coord(grid_size, theta, &vis->bl[bl], time, freq)];
-            }
+                    /= wgrid[coord(grid_size, theta, &vis->bl[bl], time, freq)]; 
+                
         }
     }
 
-}
+}}
 
 uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
                          struct vis_data *vis) {
@@ -161,7 +160,6 @@ uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
             }
         }
     }
-
     return flops;
 }
 
@@ -170,6 +168,15 @@ uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
 
     uint64_t flops = 0;
     int bl, time, freq;
+#ifdef _ARM_FEATURE_SVE
+    //Generate our Predicate Vectors.
+    svbool_t pg_t svptrue_b64();
+    svbool_t pg_f svpfalse();
+    svbool_t pg_ft = svzip1_b64(pg_f, pg_t); 
+#endif
+
+
+#   pragma omp parallel for schedule(guided,100)
     for (bl = 0; bl < vis->bl_count; bl++) {
         for (time = 0; time < vis->bl[bl].time_count; time++) {
             for (freq = 0; freq < vis->bl[bl].freq_count; freq++) {
@@ -186,13 +193,23 @@ uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
                 double complex v = vis->bl[bl].vis[time*vis->bl[bl].freq_count+freq];
                 // Copy kernel
                 int x, y;
+
+                //Acquire a lock on part of the grid.
+#               ifdef _ARM_FEATURE_SVE
+                //First compute indexes
+                
+
+                svfloat64_t subm1 = svld1_gather
+
+
+#               else
                 for (y = 0; y < wkern->size_y; y++) {
                     for (x = 0; x < wkern->size_x; x++) {
                         uvgrid[grid_offset + y*grid_size + x]
                             += v * conj(wk[sub_offset + y*wkern->size_x + x]);
                     }
                 }
-                flops += 8 * wkern->size_x * wkern->size_y;
+#               endif
             }
         }
     }
@@ -247,7 +264,6 @@ void convolve_aw_kernels(struct bl_data *bl,
             convolve2d_kernels(a1a2i,wk->data,awk,output_size_x,output_size_y,size_x,size_y,output_size_x_awk,output_size_y_awk);
             //printf("Calculated awkern size: %d",awkern_size);
             //printf("My awkern size!: %d", output_size_x_awk*output_size_y_awk);
-
 
             memcpy(&bl->awkern[(time * akern->freq_count + freq) * awkern_size],
                    awk,
