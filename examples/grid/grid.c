@@ -332,6 +332,9 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
         int i; // Loop iterator
         
 
+        svfloat64_t test;
+        uint64_t vl = svlen_f64(test);   
+
         printf("Vector Width: %d", vl); 
         svbool_t pg_t = svptrue_b64(); //Used for straight vector load of p0.
         svbool_t pg_f = svpfalse(); //Will interleave this with pg_t to create FNeg predicate.
