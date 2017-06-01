@@ -119,7 +119,6 @@ void convolve2d_kernels(double complex *kernel1, double complex *kernel2, double
 
     free(intermediate_kernel);
 
-
 }
 
 
@@ -140,12 +139,12 @@ void weight(unsigned int *wgrid, int grid_size, double theta,
         for (time = 0; time < vis->bl[bl].time_count; time++) {
             for (freq = 0; freq < vis->bl[bl].freq_count; freq++) {
                 vis->bl[bl].vis[time*vis->bl[bl].freq_count + freq]
-                    /= wgrid[coord(grid_size, theta, &vis->bl[bl], time, freq)];
-            }
+                    /= wgrid[coord(grid_size, theta, &vis->bl[bl], time, freq)]; 
+                
         }
     }
 
-}
+}}
 
 uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
                          struct vis_data *vis) {
@@ -161,7 +160,6 @@ uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
             }
         }
     }
-
     return flops;
 }
 
@@ -170,6 +168,15 @@ uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
 
     uint64_t flops = 0;
     int bl, time, freq;
+#ifdef _ARM_FEATURE_SVE
+    //Generate our Predicate Vectors.
+    svbool_t pg_t svptrue_b64();
+    svbool_t pg_f svpfalse();
+    svbool_t pg_ft = svzip1_b64(pg_f, pg_t); 
+#endif
+
+
+#   pragma omp parallel for schedule(guided,100)
     for (bl = 0; bl < vis->bl_count; bl++) {
         for (time = 0; time < vis->bl[bl].time_count; time++) {
             for (freq = 0; freq < vis->bl[bl].freq_count; freq++) {
@@ -186,13 +193,80 @@ uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
                 double complex v = vis->bl[bl].vis[time*vis->bl[bl].freq_count+freq];
                 // Copy kernel
                 int x, y;
+
+
+
+#               ifdef _ARM_FEATURE_SVE
+                
+                uint64_t *igm_r = malloc(sizeof(uint64_t)*vl);
+                uint64_t *igm_c = malloc(sizeof(uint64_t)*vl);
+
+                uint64_t *uvgrid_r = malloc(sizeof(uint64_t)*vl);
+                uint64_t *uvgrid_c = malloc(sizeof(uint64_t)*vl);
+
+                int index=0;
+                
+                for (y=0; y < wkern->size_y; y++){
+
+                    for (x = 0; x< wkern->size_x; x++){
+
+                        if(index < (vl-1)){
+                            igm_r[index] = sub_offset + y*wkern->size_x + x;
+                            igm_c[index] = sub_offset + y*wkern->size_x + x + 1;
+                            uvgrid_r[index] = grid_offset + y*wkern->size_x + x;
+                            uvgrid_c[index] = grid_offset + y*wkern->size_x + 1;
+                            index++;
+                        }
+                        else { 
+                            //If all indexes generated then run the complex multiply!
+                            //
+                            //Generate indexes in SVE format.
+                            svuint64_t ig_r = svld1_u64(pg_t,igm_r);
+                            svuint64_t ig_c = svld1_u64(pg_t,igm_c);
+                            svuint64_t uv_r = svld1_u64(pg_t,uvgrid_r);
+                            svuint64_t uv_c = svld1_u64(pg_t,uvgrid_c);
+                            //Load the real and complex parts into their seperate registers.
+                            svfloat64_t sub_r = svld1_gather_index(pg_t,(double *)&wk,ig_r);
+                            svfloat64_t sub_c = svld1_gather_index(pg_t,(double *)&wk,ig_c);
+
+                            //Now for the actual arithmetic..
+                            svfloat64_t r_r_m = svmul_z(pg_t,sub_r,creal(v));
+                            svfloat64_t r_c_m = svmul_z(pg_t,sub_r,cimag(v));
+                            svfloat64_t c_c_m = svmul_z(pg_t,sub_c,cimag(v));
+                            c_c_m = svneg_m(c_c_m,pg_t,c_c_m);
+                            svfloat64_t c_r_m = svmul_z(pg_t,sub_c,creal(c));
+                            //Add our numbers together
+                            r_r_m = svadd_m(pg_t,r_r_m,c_c_m);
+                            c_c_m = svadd_m(pg_t,r_c_m,c_r_m);
+
+                            //At long last, add them to the grid.
+                            svfloat64_t sub_uv_r = svld1_gather_index(pg_t,(double *)&wk,uv_r);
+                            svfloat64_t sub_uv_c = svld1_gather_index(pg_t,(double *)&wk,uv_c);
+                            r_r_m = svadd_m(pg_t,sub_uv_r,r_r_m);
+                            c_c_m = svadd_m(pg_t,sub_uv_c,c_c_m);
+                            svst1_scatter_index(pg_t,(double *)&uvgrid,uv_r,r_r_m);
+                            svst1_scatter_index(pg_t,(double *)&uvgrid,uv_c,c_c_m); 
+
+                            index=0;
+
+                        }
+
+                    }
+
+                }
+
+                 
+
+                
+#               else
                 for (y = 0; y < wkern->size_y; y++) {
                     for (x = 0; x < wkern->size_x; x++) {
+
                         uvgrid[grid_offset + y*grid_size + x]
                             += v * conj(wk[sub_offset + y*wkern->size_x + x]);
                     }
                 }
-                flops += 8 * wkern->size_x * wkern->size_y;
+#               endif
             }
         }
     }
@@ -247,7 +321,6 @@ void convolve_aw_kernels(struct bl_data *bl,
             convolve2d_kernels(a1a2i,wk->data,awk,output_size_x,output_size_y,size_x,size_y,output_size_x_awk,output_size_y_awk);
             //printf("Calculated awkern size: %d",awkern_size);
             //printf("My awkern size!: %d", output_size_x_awk*output_size_y_awk);
-
 
             memcpy(&bl->awkern[(time * akern->freq_count + freq) * awkern_size],
                    awk,
@@ -331,10 +404,8 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
         int gs = grid_size*grid_size-1;
         int i; // Loop iterator
         
-
         svfloat64_t test;
-        uint64_t vl = svlen_f64(test);   
-
+        uint64_t vl = svlen(test);
         printf("Vector Width: %d", vl); 
         svbool_t pg_t = svptrue_b64(); //Used for straight vector load of p0.
         svbool_t pg_f = svpfalse(); //Will interleave this with pg_t to create FNeg predicate.
@@ -351,9 +422,6 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
         svuint64_t ig = svld1_u64(pg_t,igm); // Put indexes in SVE format.
 
 
-        int gs = grid_size*grid_size - 1;
-        int i;
-#       pragma omp parallel for
         for(i=0;i<(lb-(vl/2)-1);i+=(vl/2)){
             //Load the first sub array of complex numbers. 
             //Cast pointer as a double, as double complex is just interleaved(Re/Im/Re/Im.. etc)  doubles
