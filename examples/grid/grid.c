@@ -251,13 +251,41 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
     fft_shift(wtransfer, subgrid_size);
 
     // Make sub-grids in grid and image space
+
+    int chunk_size = subgrid_size - subgrid_margin;
+    int chunk_count = grid_size / chunk_size + 1;
+
+
+    // Make FFT plan. NOT THREAD SAFE.
+    fftw_plan fft_plan, ifft_plan;
+
+#ifdef OMP_TOWERS
+    int cym, cxm;
+    
+    //If we parallelise this we need all the subgrids seperate. Not sure of effect on cache..
+    double complex **subgrids = (double complex **)malloc((grid_size / chunk_size + 1)*(grid_size / chunk_size + 1) * sizeof(double complex));
+    for(cym=0 ; cym < chunk_count; cym++){
+        for(cxm = 0; cxm <  chunk_count; cxm++){
+            *(subgrids + cym * chunk_count + cxm) = (double complex *)malloc(subgrid_mem_size);
+        }
+    }
+
+    double complex **subimgs = (double complex **)malloc((grid_size / chunk_size + 1)*(grid_size / chunk_size + 1) * sizeof(double complex));
+    for(cym=0 ; cym < chunk_count; cym++){
+        for(cxm = 0; cxm <  chunk_count; cxm++){
+            *(subimgs + cym * chunk_count + cxm) = (double complex *)malloc(subgrid_mem_size);
+        }
+    }
+
+    fft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, *(subimgs), *(subimgs), -1, FFTW_MEASURE);
+    ifft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, *(subgrids), *(subgrids), 1, FFTW_MEASURE);
+#else
     double complex *subgrid = (double complex *)malloc(subgrid_mem_size);
     double complex *subimg = (double complex *)malloc(subgrid_mem_size);
 
-    // Make FFT plans
-    fftw_plan fft_plan, ifft_plan;
     fft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, subimg, subimg, -1, FFTW_MEASURE);
     ifft_plan = fftw_plan_dft_2d(subgrid_size, subgrid_size, subgrid, subgrid, +1, FFTW_MEASURE);
+#endif
 
     // Determine bounds in w
     double vis_w_min = 0, vis_w_max = 0;
@@ -272,8 +300,6 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
     int wp_max = (int) floor(vis_w_max / wincrement + 0.5);
 
     // Bin in uv
-    int chunk_size = subgrid_size - subgrid_margin;
-    int chunk_count = grid_size / chunk_size + 1;
     int bins_size = sizeof(void *) * chunk_count * chunk_count;
     struct bl_data ***bins = (struct bl_data ***)malloc(bins_size);
     memset(bins, 0, bins_size);
@@ -307,12 +333,18 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
 
             }
         }
-
     }
 
+    //Some debug information to help me parallelise..
+    printf("Chunks %d",grid_size/chunk_size + 1);
+
+//# pragma omp paralell for
     // Grid chunks
     uint64_t flops = 0;
     int cy, cx;
+#ifdef OMP_TOWERS
+#pragma omp parallel for private(cy,cx)
+#endif
     for (cy = 0; cy < grid_size / chunk_size + 1; cy++) {
         for (cx = 0; cx < grid_size / chunk_size + 1; cx++) {
 
@@ -336,8 +368,13 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
             double v_mid = (double)(y_min + chunk_size / 2) / theta;
 
             // Clean subgrid
+#ifdef OMP_TOWERS
+            memset(*(subgrids+cy*chunk_count+cx), 0, subgrid_mem_size);
+            memset(*(subimgs+cy*chunk_count+cx), 0, subgrid_mem_size);
+#else
             memset(subgrid, 0, subgrid_mem_size);
-            memset(subimg, 0, subgrid_mem_size);
+            memset(subimg, 0, subgrid_mem_size); 
+#endif
 
             // Go through w-planes
             int have_vis = 0;
@@ -347,30 +384,57 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
                 double w_min = ((double)wp - 0.5) * wincrement;
                 double w_max = ((double)wp + 0.5) * wincrement;
 
+#ifdef OMP_TOWERS
+                // Now grid all baselines for this uvw bin
+                uint64_t bin_flops = w_project_bin(*(subgrids+cy*chunk_count+cx), subgrid_size, theta, bl_bin, bl_count, wkern,
+                                                   u_min, u_max, u_mid,
+                                                   v_min, v_max, v_mid,
+                                                   w_min, w_max, w_mid);
+#else
                 // Now grid all baselines for this uvw bin
                 uint64_t bin_flops = w_project_bin(subgrid, subgrid_size, theta, bl_bin, bl_count, wkern,
                                                    u_min, u_max, u_mid,
                                                    v_min, v_max, v_mid,
                                                    w_min, w_max, w_mid);
-
+#endif
                 // Skip the rest if we found no visibilities
                 if (bin_flops == 0) { continue; }
                 flops += bin_flops;
                 have_vis = 1;
 
+
+#ifdef OMP_TOWERS  
                 // IFFT the sub-grid in-place, add to image sum
+                fftw_execute_dft(ifft_plan, *(subgrids + cy*chunk_count +cx), *(subgrids + cy*chunk_count + cx));
+#else
                 fftw_execute_dft(ifft_plan, subgrid, subgrid);
+#endif
+
 
                 // Bring image sum to our w-plane and add new data,
                 // clean subgrid for next w-plane.
+#ifdef OMP_TOWERS
                 for (y = 0; y < subgrid_size; y++) {
                     for (x = 0; x < subgrid_size; x++) {
                         double complex wtrans = cipow(wtransfer[y*subgrid_size + x], wp-last_wp);
-                        subimg[y*subgrid_size + x] =
+                        *(*(subimgs+cy*chunk_count+cx)+y*subgrid_size +x) = 
+                            wtrans * *(*(subimgs + cy*chunk_count + cx)+y*subgrid_size+x) + *(*(subgrids + cy*chunk_count + cx)+y*subgrid_size + x);
+                        *(*(subgrids + cy*chunk_count + cx)+ y*subgrid_size + x) = 0;
+                        //subimg[y*subgrid_size + x] =
+                        //    wtrans * subimg[y*subgrid_size + x] + subgrid[y*subgrid_size + x];
+                        //subgrid[y*subgrid_size + x] = 0;
+                    }
+                }
+#else 
+                for (y = 0; y< subgrid_size; y++) {
+                    for(x = 0; x < subgrid_size; x++){
+                        double complex wtrans = cipow(wtransfer[y*subgrid_size + x], wp-last_wp);
+                        subimg[y*subgrid_size + x] = 
                             wtrans * subimg[y*subgrid_size + x] + subgrid[y*subgrid_size + x];
                         subgrid[y*subgrid_size + x] = 0;
                     }
                 }
+#endif
                 last_wp = wp;
 
             }
@@ -382,14 +446,22 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
             if (last_wp != 0) {
                 for (y = 0; y < subgrid_size; y++) {
                     for (x = 0; x < subgrid_size; x++) {
-                        subimg[y*subgrid_size + x] /= cipow(wtransfer[y*subgrid_size + x], last_wp);
+#ifdef OMP_TOWERS
+                        *(*(subimgs + cy*chunk_count+cx)+y*subgrid_size+x) /= cipow(wtransfer[y*subgrid_size + x], last_wp);
+#else
+                        subimg[y * subgrid_size + x] /= cipow(wtransfer[y*subgrid_size + x], last_wp);
+#endif
                     }
                 }
             }
 
+#ifdef OMP_TOWERS
+            // FFT
+            fftw_execute_dft(fft_plan, *(subimgs + cy*chunk_count + cx),*(subimgs + cy*chunk_count + cx));
+#else
             // FFT
             fftw_execute_dft(fft_plan, subimg, subimg);
-
+#endif
             // Add to main grid, ignoring margins, which might be over
             // bounds (should not actually happen, but let's be safe)
             int x0 = x_min - subgrid_margin/2, x1 = x0 + subgrid_size;
@@ -399,16 +471,24 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
             if (x1 > grid_size/2) { x1 = grid_size/2; }
             if (y1 > grid_size/2) { y1 = grid_size/2; }
             double complex *uvgrid_mid = uvgrid + (grid_size+1)*grid_size/2;
+#ifdef OMP_TOWERS
+            for (y = y0; y < y1; y++) {
+                for (x = x0; x < x1; x++) {
+                    uvgrid_mid[x + y*grid_size] += *(*(subimgs+cy*chunk_count+cx)+(x-x_min+subgrid_margin/2) +
+                                                          (y-y_min+subgrid_margin/2)*subgrid_size);
+                }
+            }
+#else
             for (y = y0; y < y1; y++) {
                 for (x = x0; x < x1; x++) {
                     uvgrid_mid[x + y*grid_size] += subimg[(x-x_min+subgrid_margin/2) +
                                                           (y-y_min+subgrid_margin/2)*subgrid_size];
                 }
             }
-
+#endif
         }
     }
-
+#ifndef OMP_TOWERS
     // Check that all visibilities were actually gridded
     for (bl = 0; bl < vis->bl_count; bl++) {
         if (vis->bl[bl].flops !=
@@ -419,12 +499,23 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
                    8 * wkern->size_x * wkern->size_x * vis->bl[bl].time_count * vis->bl[bl].freq_count);
         }
     }
-
+#endif
     // Clean up
     fftw_destroy_plan(fft_plan);
     fftw_destroy_plan(ifft_plan);
+    
+#ifdef OMP_TOWERS
+    
+    for (cy = 0; cy < grid_size / chunk_size +1; cy++){
+        for (cx = 0; cx < grid_size / chunk_size +1; cx++){
+            free(*(subgrids + cy*chunk_count +cx));
+            free(*(subimgs + cy*chunk_count + cx));
+        }
+    }
+#else
     free(subgrid);
     free(subimg);
+#endif
     for (cy = 0; cy < grid_size / chunk_size + 1; cy++) {
         for (cx = 0; cx < grid_size / chunk_size + 1; cx++) {
             free(bins[cy*chunk_count + cx]);
