@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 #include <fcntl.h>
 #include <complex.h>
 #include <fftw3.h>
@@ -19,6 +21,8 @@
 
 int main(int argc, char *argv[]) {
 
+    //Structure for reporting memory usage:
+    struct rusage *rusage_cp = malloc(sizeof(struct rusage));
     // Read parameters
     static struct option options[] =
       {
@@ -216,9 +220,13 @@ int main(int argc, char *argv[]) {
 
     struct timespec end_time;
     clock_gettime(CLOCK_REALTIME, &end_time);
-    printf(" ... took %.3fs",
+    printf("\nGrid-Time:  %.3f",
            (double)(end_time.tv_sec - start_time.tv_sec) +
            (double)(end_time.tv_nsec - start_time.tv_nsec) / 1000000000);
+
+    //Lets get some memory stats:
+    getrusage(RUSAGE_SELF, rusage_cp);
+    printf("\nMaximum Grid Memory: %.2f GB", (float)rusage_cp->ru_maxrss/(1024*1024));
 
     // Show performance counters after gridding
     printf("\nCounters:\n");
@@ -264,6 +272,7 @@ int main(int argc, char *argv[]) {
         }
         close(image_fd);
     }
-
+    getrusage(RUSAGE_SELF, rusage_cp);
+    printf("\nMax Memory: %.2f GB", (float)rusage_cp->ru_maxrss/(1024*1024));
     return 0;
 }
