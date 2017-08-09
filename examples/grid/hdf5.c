@@ -337,8 +337,11 @@ int load_vis(const char *filename, struct vis_data *vis,
     return 0;
 }
 
+#ifdef VAR_W_KERN
+int load_wkern(const char *filename, double theta, struct var_w_kernel_data *wkern){
+#else
 int load_wkern(const char *filename, double theta, struct w_kernel_data *wkern) {
-
+#endif
     // Open file
     hid_t wkern_f = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
     if (wkern_f < 0) {
@@ -368,8 +371,13 @@ int load_wkern(const char *filename, double theta, struct w_kernel_data *wkern) 
     }
 
     // Read kernels
+    #ifdef VAR_W_KERN
+    wkern->kern = (struct var_w_kernel *)calloc(wkern->plane_count, sizeof(struct var_w_kernel));
+    #else
     wkern->kern = (struct w_kernel *)calloc(wkern->plane_count, sizeof(struct w_kernel));
     wkern->size_x = wkern->size_y = wkern->oversampling = 0;
+    #endif
+
     int i;
     for (i = 0; i < wkern->plane_count; i++) {
         char name[64];
@@ -390,9 +398,34 @@ int load_wkern(const char *filename, double theta, struct w_kernel_data *wkern) 
         if (H5Sget_simple_extent_ndims(H5Dget_space(dset)) == 4 &&
             H5Tget_size(H5Dget_type(dset)) == sizeof(double complex)) {
 
-            // Read dimensions
+	    // Read dimensions
             hsize_t dims[4];
             H5Sget_simple_extent_dims(H5Dget_space(dset), dims, NULL);
+
+#ifdef VAR_W_KERN
+
+	    wkern->kern[i].oversampling = dims[0];
+	    wkern->kern[i].size_y = dims[2];
+	    wkern->kern[i].size_x = dims[3];
+
+	    hsize_t total_size = wkern->kern[i].oversampling * wkern->kern[i].oversampling *
+	      wkern->kern[i].size_y * wkern->kern[i].size_x;
+
+	    wkern->kern[i].data = (double complex *)calloc(sizeof(double complex), total_size);
+	    H5Dread(dset, dtype_cpx, H5S_ALL, H5S_ALL, H5P_DEFAULT, wkern->kern[i].data);
+
+
+	    // Complain if anything is amiss
+	    if (wkern->kern[i].oversampling <= 0 || wkern->kern[i].size_y <= 0
+		|| wkern->kern[i].size_x <= 0) {
+	      fprintf(stderr, "Invalid dimensions in w-kernel %s!\n", data_name);
+	      return 1;
+	    }
+    
+
+	  
+#else
+          
             if (wkern->oversampling == 0) {
                 wkern->oversampling = dims[0];
                 wkern->size_y = dims[2];
@@ -409,7 +442,9 @@ int load_wkern(const char *filename, double theta, struct w_kernel_data *wkern) 
             } else {
                 fprintf(stderr, "kernel %s has inconsistent dimensions - ignored!\n", data_name);
             }
-        }
+#endif
+
+	}
         H5Dclose(dset);
     }
 
@@ -417,14 +452,20 @@ int load_wkern(const char *filename, double theta, struct w_kernel_data *wkern) 
     H5Gclose(wkern_g);
     H5Fclose(wkern_f);
 
+#ifndef VAR_W_KERN
     // Complain if anything is amiss
     if (wkern->oversampling <= 0 || wkern->size_y <= 0 || wkern->size_x <= 0) {
         fprintf(stderr, "Invalid dimensions in w-kernel file %s!\n", filename);
         return 1;
     }
-
+#endif
     // Index kernels by w-value
+
+#ifdef VAR_W_KERN
+    wkern->kern_by_w = (struct var_w_kernel *)malloc(sizeof(struct var_w_kernel) * wkern->plane_count);
+#else						  
     wkern->kern_by_w = (struct w_kernel *)malloc(sizeof(struct w_kernel) * wkern->plane_count);
+#endif						     
     wkern->w_step = (wkern->w_max - wkern->w_min) / (wkern->plane_count - 1);
     for (i = 0; i < wkern->plane_count; i++) {
         double w = wkern->w_min + (i * wkern->w_step);

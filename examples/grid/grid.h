@@ -31,12 +31,13 @@ struct vis_data
     struct bl_data *bl;
 };
 
-// W-kernel data
+// Static W-kernel data
 struct w_kernel
 {
     double complex *data;
     double w;
 };
+
 struct w_kernel_data
 {
     int plane_count;
@@ -45,6 +46,24 @@ struct w_kernel_data
     double w_min, w_max, w_step;
     int size_x, size_y;
     int oversampling;
+};
+
+// Variable W-Kernel data.
+
+struct var_w_kernel
+{
+    double complex *data;
+    double w;
+    int size_x, size_y;
+    int oversampling;
+};
+
+struct var_w_kernel_data
+{
+    int plane_count;
+    struct var_w_kernel *kern;
+    struct var_w_kernel *kern_by_w;
+    double w_min, w_max, w_step;
 };
 
 // A-kernel data
@@ -80,8 +99,14 @@ struct perf_counters
 void init_dtype_cpx();
 int load_vis(const char *filename, struct vis_data *vis,
              double min_len, double max_len);
+
+#ifdef VAR_W_KERN
+int load_wkern(const char *filename, double theta,
+	       struct var_w_kernel_data *wkern);
+#else
 int load_wkern(const char *filename, double theta,
                struct w_kernel_data *wkern);
+#endif
 int load_akern(const char *filename, double theta,
                struct a_kernel_data *akern);
 
@@ -89,8 +114,13 @@ void weight(unsigned int *wgrid, int grid_size, double theta,
             struct vis_data *vis);
 uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
                      struct vis_data *vis);
+#ifdef VAR_W_KERN
+uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
+			  struct vis_data *vis, struct var_w_kernel_data *wkern);
+#else
 uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
                           struct vis_data *vis, struct w_kernel_data *wkern);
+#endif
 uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
                       double theta,
                       struct vis_data *vis, struct w_kernel_data *wkern,

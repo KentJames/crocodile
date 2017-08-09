@@ -26,6 +26,9 @@
 /docs/arl
 .ipynb_checkpoints
 
+*.out
+*.swp
+*.o
 out.fits
 dirty.fits
 psf.fits

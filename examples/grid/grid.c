@@ -98,6 +98,62 @@ uint64_t grid_simple(double complex *uvgrid, int grid_size, double theta,
     return flops;
 }
 
+//If the W-Kernels vary in size.
+#ifdef VAR_W_KERN
+
+inline static uint64_t w_project(double complex *uvgrid, int grid_size, double theta,
+                                 int time, int freq,
+                                 double d_u, double d_v, double d_w,
+                                 struct bl_data *bl, struct var_w_kernel_data *wkern) {
+
+    // Determine w-kernel to use
+    double w = uvw_lambda(bl, time, freq, 2) - d_w;
+    int w_plane = (int)floor((w - wkern->w_min) / wkern->w_step + .5);
+    double complex *wk = wkern->kern_by_w[w_plane].data;
+    // Get visibility
+    double complex v = bl->vis[time*bl->freq_count+freq];
+    // Copy kernel
+    int x, y;
+    // Calculate grid and sub-grid coordinates
+    int grid_offset, sub_offset;
+    frac_coord(grid_size, wkern->kern_by_w[w_plane].size_x,
+	       wkern->kern_by_w[w_plane].oversampling,
+               theta, bl, time, freq, d_u, d_v,
+               &grid_offset, &sub_offset);
+    int wkern_size = wkern->kern_by_w[w_plane].size_x;
+    assert(wkern->kern_by_w[w_plane].size_y == wkern_size);
+    for (y = 0; y < wkern_size; y++) {
+        for (x = 0; x < wkern_size; x++) {
+            uvgrid[grid_offset + y*grid_size + x]
+                += v * conj(wk[sub_offset + y*wkern_size + x]);
+        }
+    }
+
+    return 8 * wkern_size * wkern_size;
+}
+
+uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
+                          struct vis_data *vis, struct var_w_kernel_data *wkern) {
+
+    uint64_t flops = 0;
+    int bl, time, freq;
+    for (bl = 0; bl < vis->bl_count; bl++) {
+        for (time = 0; time < vis->bl[bl].time_count; time++) {
+            for (freq = 0; freq < vis->bl[bl].freq_count; freq++) {
+                flops += w_project(uvgrid, grid_size, theta, time, freq,
+                                   0, 0, 0, &vis->bl[bl], wkern);
+            }
+        }
+    }
+
+    return flops;
+}
+
+
+
+
+#else
+
 inline static uint64_t w_project(double complex *uvgrid, int grid_size, double theta,
                                  int time, int freq,
                                  double d_u, double d_v, double d_w,
@@ -145,6 +201,8 @@ uint64_t grid_wprojection(double complex *uvgrid, int grid_size, double theta,
     return flops;
 }
 
+#endif
+
 static inline double lambda_min(struct bl_data *bl_data, double u) {
     return u * (u < 0 ? bl_data->f_max : bl_data->f_min) / c;
 }
@@ -152,13 +210,23 @@ static inline double lambda_max(struct bl_data *bl_data, double u) {
     return u * (u < 0 ? bl_data->f_min : bl_data->f_max) / c;
 }
 
+
+#ifdef VAR_W_KERN
+static uint64_t w_project_bin(double complex *subgrid, int subgrid_size, double theta,
+                              struct bl_data **bl_bin, int bl_count,
+                              struct var_w_kernel_data *wkern,
+                              double u_min, double u_max, double u_mid,
+                              double v_min, double v_max, double v_mid,
+                              double w_min, double w_max, double w_mid) {
+
+#else
 static uint64_t w_project_bin(double complex *subgrid, int subgrid_size, double theta,
                               struct bl_data **bl_bin, int bl_count,
                               struct w_kernel_data *wkern,
                               double u_min, double u_max, double u_mid,
                               double v_min, double v_max, double v_mid,
                               double w_min, double w_max, double w_mid) {
-
+#endif
     int bl, time, freq;
     uint64_t all_flops = 0;
     for (bl = 0; bl < bl_count; bl++) {

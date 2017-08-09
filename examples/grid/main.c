@@ -108,7 +108,12 @@ int main(int argc, char *argv[]) {
 
     // Open files
     struct vis_data vis;
+
+#ifdef VAR_W_KERN
+    struct var_w_kernel_data wkern;
+#else
     struct w_kernel_data wkern;
+#endif
     struct a_kernel_data akern;
     int grid_fd = -1, image_fd = -1;
     if (load_vis(vis_file, &vis, bl_min, bl_max)) {
