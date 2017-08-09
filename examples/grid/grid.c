@@ -439,11 +439,11 @@ uint64_t grid_wtowers(double complex *uvgrid, int grid_size,
         if (x1 > grid_size/2) { x1 = grid_size/2; }
         if (y1 > grid_size/2) { y1 = grid_size/2; }
         double complex *uvgrid_mid = uvgrid + (grid_size+1)*grid_size/2;
-        
+        int sg_norm = subgrid_size * subgrid_size;
         for (y = y0; y < y1; y++) {
             for (x = x0; x < x1; x++) {
-                uvgrid_mid[x + y*grid_size] += subimg[(x-x_min+subgrid_margin/2) +
-                                                      (y-y_min+subgrid_margin/2)*subgrid_size];
+	      uvgrid_mid[x + y*grid_size] += (subimg[(x-x_min+subgrid_margin/2) +
+						     (y-y_min+subgrid_margin/2)*subgrid_size] / sg_norm);
             }
         }
     }
