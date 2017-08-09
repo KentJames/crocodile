@@ -29,6 +29,7 @@ This is implemented for reference in
 
 from __future__ import division
 
+import numba
 import numpy
 import pylru
 import scipy.special
