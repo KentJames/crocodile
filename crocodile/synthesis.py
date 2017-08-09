@@ -502,6 +502,87 @@ def doweight(theta, lam, p, v):
     return v
 
 
+@numba.jit(nopython = False)
+def dft_imaging_opt(theta, lam, uvw, src, vis):
+    """My attempt at making a faster version of the DFT below.
+    James Kent <jck42@cam.ac.uk>
+    
+    """
+    uvw = uvw/lam
+    N = int(round(theta * lam))
+    guv = numpy.zeros([N,N],dtype=complex)
+
+    
+    l = numpy.arange(-N/2,N/2,1)
+    m = numpy.arange(-N/2,N/2,1)
+
+    
+
+    l,m = numpy.meshgrid(l,m)
+
+    l_p = l/lam
+    m_p = m/lam
+
+    i = 0
+    for vis_l,uvw_l in zip(vis, uvw):
+        i+=1
+        print("DFT Progress: {:0.6f} \r".format((i/len(vis))*100),end='')
+    
+        subang1 = l_p * uvw_l[0]
+        subang2 = m_p * uvw_l[1]
+        subang3 = uvw_l[2] * (numpy.sqrt(1-l_p**2-m_p**2))
+
+        angle = 2 * numpy.pi * (subang1 + subang2 + subang3)
+
+        guv.real += vis_l.real * numpy.cos(angle) + vis_l.imag * numpy.sin(angle)
+        guv.imag += -vis_l.real * numpy.sin(angle) + vis_l.imag * numpy.cos(angle)
+
+        if i > 12000:
+            break
+
+    return guv
+    
+        
+        
+    
+def dft_imaging(theta, lam, uvw, src, vis):
+    """Creates image via direct Discrete Fourier Transform
+    James Kent <jck42@cam.ac.uk>
+    
+    No gridding required but this might take a very long time!
+    """
+    uvw = uvw/lam
+    
+    N = int(round(theta * lam))
+#    assert N>1
+
+    guv = numpy.zeros([N,N],dtype=complex)
+
+    
+    for l in numpy.arange(-N/2,N/2,1):
+
+        l_p = l/lam
+        for m in numpy.arange(-N/2,N/2,1):
+            print("DFT Progress: {:0.6f} \r".format((((l+N/2)*N )+ (m + N/2 ) )/(N*N) ),end='')
+            m_p = m/lam
+            sumreal = 0
+            sumimag = 0
+            
+            for vis_l,uvw_l in zip(vis,uvw):
+
+                subang1 = (m_p*uvw_l[1])
+                subang2 = (l_p*uvw_l[0])
+                subang3 = uvw_l[2] * (numpy.sqrt(1- l_p**2 - m_p**2)-1)
+                angle = 2 * numpy.pi * (subang1 + subang2 + subang3)
+
+                sumreal += vis_l.real * numpy.cos(angle) + vis_l.imag * numpy.sin(angle)
+                sumimag += -vis_l.real * numpy.sin(angle) + vis_l.imag * numpy.cos(angle)
+
+        guv[int(l+N/2)][int(m+N/2)] = np.complex(sumreal,sumimag)
+
+    return guv
+        
+
 def simple_imaging(theta, lam, uvw, src, vis):
     """Trivial function for imaging
 
