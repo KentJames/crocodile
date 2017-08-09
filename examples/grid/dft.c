@@ -19,68 +19,18 @@
 #include "grid.h"
 
 
-void image_dft_quick(double complex *uvgrid, int grid_size, double lambda,
-        struct vis_data *vis){
-
-
-    int total_steps = grid_size*grid_size;
-    static int steps_completed = 0;
-#pragma omp parallel for schedule(dynamic) 
-    for (int y = 0; y<grid_size; ++y){
-
-        int l = (y - grid_size / 2)/lambda;
-
-        for (int x = 0; x<grid_size; ++x){    
-            int m = (x - grid_size / 2)/lambda;
-            double real_p = 0;
-            double complex_p = 0;
-            for(int bl = 0; bl < vis->bl_count; ++bl){
-//                for(int time = 0; time < vis->bl[bl].time_count; ++time){
-
-                //    for (int freq = 0; freq < 5; ++freq){
-                    //for (int freq = 0; freq < vis->bl[bl].freq_count; ++freq){
-                int time = 0;
-                int freq = 0;        
-                double complex visibility = vis->bl[bl].vis[time*vis->bl[bl].freq_count + freq];
-
-                double subang1 = l * vis->bl[bl].uvw[time*vis->bl[bl].freq_count + freq];
-                double subang2 = m * vis->bl[bl].uvw[time*vis->bl[bl].freq_count + freq + 1];
-                double subang3 = (sqrt(1-l*l-m*m)-1) * vis->bl[bl].uvw[time*vis->bl[bl].freq_count + freq + 2];
-                
-                double angle = 2 * M_PI * subang1 + subang2 + subang3;
-
-                real_p += creal(visibility) * cos(angle) + cimag(visibility) * sin(angle);
-                complex_p += -creal(visibility) * sin(angle) + cimag(visibility) * cos(angle);
-
-                  //  }
-                //}
-             }
-            uvgrid[y*grid_size + x] = real_p + complex_p * I;
-        
-        #pragma omp atomic
-            ++steps_completed;
-        #pragma omp critical
-            printf("Progress: %d/%d \r",steps_completed,total_steps);
-        //printf("Progress: %d/%d \r",(y*grid_size + x),(grid_size*grid_size));
-        }
-    }
-}
-
-
-
-
 void image_dft(double complex *uvgrid, int grid_size, double lambda,
         struct vis_data *vis){
 
 
     int total_steps = grid_size;
     int steps_completed = 0;
-//#pragma omp parallel for schedule(dynamic) 
-    for (int y = 0; y<grid_size; ++y){
+#pragma omp parallel for schedule(dynamic) 
+    for (int y = 0; y<grid_size; y+=10){
 
         int l = (y - grid_size / 2)/lambda;
 
-        for (int x = 0; x<grid_size; ++x){    
+        for (int x = 0; x<grid_size; x+=10){    
             int m = (x - grid_size / 2)/lambda;
             double real_p = 0;
             double complex_p = 0;
@@ -105,12 +55,12 @@ void image_dft(double complex *uvgrid, int grid_size, double lambda,
              }
             uvgrid[y*grid_size + x] = real_p + complex_p * I;
         
-        printf("Progress: %d/%d \r",(y*grid_size + x),(grid_size*grid_size));
+        //printf("Progress: %d/%d \r",(y*grid_size + x),(grid_size*grid_size));
         }
-    //#pragma omp atomic
-        //++steps_completed;
-    //#pragma omp critical
-        //printf("Progress: %d/%d \r",steps_completed,total_steps);
+    #pragma omp atomic
+        ++steps_completed;
+    #pragma omp critical
+        printf("Progress: %d/%d \r",steps_completed,total_steps);
     }
 }
 
@@ -215,7 +165,7 @@ int main(int argc, char *argv[]){
     uint64_t flops = 0, mem = 0;
     printf("Direct DFT...(this takes a LONG time)\n");
     // DFT HERE
-    image_dft_quick(uvgrid, grid_size, lambda, &vis); 
+    image_dft(uvgrid, grid_size, lambda, &vis); 
     struct timespec end_time;
     clock_gettime(CLOCK_REALTIME, &end_time);
     printf("\nGrid-Time:  %.3f",
