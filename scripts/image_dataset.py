@@ -39,6 +39,8 @@ parser.add_argument('--kern-cache', dest='kern_cache', type=int,
                     help='Size of A-kernel cache')
 parser.add_argument('--quick', dest='method', const='quick', action='store_const',
                     help='Only use one visibility from every baseline')
+parser.add_argument('--dft', dest='dft', const=True, default=False, action='store_const',
+                    help='Use DFT to Create Image. VERY slow')
 parser.add_argument('--psf', dest='psf', const=True, default=False, action='store_const',
                     help='generate point spread function')
 parser.add_argument('--show-grid', dest='show_grid', const=True, default=False, action='store_const',
@@ -73,15 +75,17 @@ else:
 
     # Utility to collect data from visibility blocks
     def collect_blocks(prop):
-        result = []
+        result = [] 
         for vis in viss:
             vres = []
-            for chan in range(len(vis.frequency)):
+            print(len(vis.frequency))
+            for chan in range(1):
                 vres.append(prop(vis, chan))
             result.append(numpy.vstack(numpy.transpose(vres, (1,0,2))))
         return numpy.vstack(result)
-
+    print("Getting Baseline Information...")
     uvw = collect_blocks(lambda vis, chan: vis.uvw_lambda(chan))
+    print("Getting Antenna Information...")
     src = collect_blocks(
         lambda vis, chan: numpy.transpose([
             vis.antenna1,
@@ -89,8 +93,10 @@ else:
             vis.time,
             vis.frequency[chan] * numpy.ones(vis.time.shape)
         ]))
-    vis = collect_blocks(lambda vis, chan: vis.vis[:,chan,:])[:,0]
+    print("Getting Visibilities...")
 
+    vis = collect_blocks(lambda vis, chan: vis.vis[:,0,:])[:,0]
+    
 # Show statistics
 print()
 print("Have %d visibilities" % vis.shape[0])
@@ -107,7 +113,10 @@ if args.wkern is None:
 
     # Simple imaging without convolution. No source dependency.
     print("Gridder: Simple imaging")
-    grid_fn = simple_imaging
+    if args.dft is True:
+        grid_fn = dft_imaging_opt
+    else:
+        grid_fn = simple_imaging
     grid_pars = {}
     src = numpy.zeros((src.shape[0],0))
 
