@@ -20,7 +20,7 @@
 
 
 void image_dft(double complex *uvgrid, int grid_size, double lambda,
-        struct vis_data *vis){
+	       struct vis_data *vis, int iter){
 
 
     int total_steps = grid_size;
@@ -30,7 +30,7 @@ void image_dft(double complex *uvgrid, int grid_size, double lambda,
 
         int l = (y - grid_size / 2)/lambda;
 
-        for (int x = 0; x<grid_size; x+=10){    
+        for (int x = 0; x<grid_size; x+=iter){    
             int m = (x - grid_size / 2)/lambda;
             double real_p = 0;
             double complex_p = 0;
@@ -78,6 +78,7 @@ int main(int argc, char *argv[]){
         {"image",   optional_argument, 0, 'i' },
         {"min-bl",  optional_argument, 0, 'b' },
         {"max-bl",  optional_argument, 0, 'B' },
+	{"iter",    optional_argument, 0, 'I' },
         {0, 0, 0, 0}
       };
     int option_index = 0;
@@ -85,6 +86,7 @@ int main(int argc, char *argv[]){
     char *image_file = NULL;
     double bl_min = DBL_MIN, bl_max = DBL_MAX;
     int c; int invalid = 0;
+    long iter = 1;
     while ((c = getopt_long(argc, argv, ":", options, &option_index)) != -1) {
         switch(c) {
         case 't': theta = atof(optarg); break;
@@ -92,6 +94,7 @@ int main(int argc, char *argv[]){
         case 'i': image_file = optarg; break;
         case 'b': bl_min = atof(optarg); break;
         case 'B': bl_max = atof(optarg); break;
+	case 'I': iter = atol(optarg); break;
         default: invalid = 1; break;
         }
     }
@@ -123,6 +126,7 @@ int main(int argc, char *argv[]){
         printf("  --image=IMAGE         image output file\n");
         printf("  --min-bl=MIN_BL       Minimum baseline length to consider (in km)\n");
         printf("  --max-bl=MAX_BL       Maximum baseline length to consider (in km)\n");
+	printf("  --iter=ITER           Samples every +=ITER point in fourier space. Quickens DFT.\n");
         printf("positional arguments:\n");
         printf("  input                 input visibilities\n");
         return 1;
@@ -164,8 +168,11 @@ int main(int argc, char *argv[]){
 
     uint64_t flops = 0, mem = 0;
     printf("Direct DFT...(this takes a LONG time)\n");
+
+    if(iter>1) printf("Sampling every %ld points in fourier space (saves time).\n",iter);
+    
     // DFT HERE
-    image_dft(uvgrid, grid_size, lambda, &vis); 
+    image_dft(uvgrid, grid_size, lambda, &vis,iter); 
     struct timespec end_time;
     clock_gettime(CLOCK_REALTIME, &end_time);
     printf("\nGrid-Time:  %.3f",
