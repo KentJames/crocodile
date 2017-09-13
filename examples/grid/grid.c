@@ -426,8 +426,9 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
             //Load the first sub array of complex numbers. 
             //Cast pointer as a double, as double complex is just interleaved(Re/Im/Re/Im.. etc)  doubles
             svfloat64_t subm1 = svld1(pg_t,(double *)&uvgrid[i]); 
-            //Gather Load p1 into vector register using indexes
-            svfloat64_t subm2 = svld1_gather_index(pg_t,(double *)&uvgrid[gs-i-(vl/2)],ig); //Gather load.
+            //Contiguous load followed by a TBL lookup/permute to swap around.
+            svfloat64_t subm2 = svld1(pg_t,(double *)&uvgrid[gs-i-(vl/2)]);
+	    subm2 = svtbl(subm2, ig);
 
             //Negate imaginary values and add to other side of grid, then store in memory.
             svfloat64_t subm_neg = svneg_m(subm2, pg_ft,subm2); 
@@ -437,7 +438,10 @@ void make_hermitian(double complex *restrict uvgrid,const int grid_size) {
             //Negate  imaginary values and to other side of grid, then store in memory
             subm_neg = svneg_m(subm1, pg_ft, subm1);
             subm_add = svadd_m(pg_t,subm2,subm_neg);
-            svst1_scatter_index(pg_t, (double*)&uvgrid[gs-i-(vl/2)],ig,subm_add); //Scatter store.       
+
+	    // Table lookup/permute then store in memory.
+	    subm_add = svtbl(subm_add, ig);
+            svst1(pg_t, (double*)&uvgrid[gs-i-(vl/2)],subm_add); //Scatter store.
         }
         // Whatever doesn't fit into SVE registers we just iterate through in serial. 
         for(;i<(lb-1);i++){
