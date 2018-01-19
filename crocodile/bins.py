@@ -298,6 +298,21 @@ class Bin:
         bin2 = Bin(self.iu0, self.iu1, self.iv0, self.iv1, self.iw0, at_w, bins, self.wplanes)
         return bin1, bin2
 
+    def merge_power_of_two(self, other, bins):
+        """ 
+        Merge two bins, and snap them to a power of two size.
+        """
+
+        return Bin(min(self.iu0, other.iu0),
+                   2 ** int(round(numpy.log2(max(self.iu1, other.iu1)))),
+                   min(self.iv0, other.iv0),
+                   2 ** int(round(numpy.log2(max(self.iv1, other.iv1)))),
+                   min(self.iw0, other.iw0),
+                   max(self.iw1, other.iw1),
+                   bins,
+                   self.wplanes)
+
+    
     def merge(self, other, bins):
         """
         Merge two bins. Note that the new bin might contain more
@@ -406,13 +421,17 @@ class BinSet(Annealer):
         e = self.energy()
         if op == 0:
             b = self.pop_bin()
-            b0, b1 = b.split_u(random.randint(b.iu0, b.iu1-1), self)
+            #b0, b1 = b.split_u(random.randint(b.iu0, b.iu1-1), self)
+            #print("Log2 split {}".format(numpy.log2(abs(b.iu0 - b.iu1))))
+            b0, b1 = b.split_u(int(b.iu0+abs(b.iu0 - b.iu1)/2), self);
             assert b0.nvis + b1.nvis == b.nvis
             self.push_bin(b0)
             self.push_bin(b1)
         elif op == 1:
             b = self.pop_bin()
-            b0, b1 = b.split_v(random.randint(b.iv0, b.iv1-1), self)
+            #print("Log2 split {}".format(numpy.log2(abs(b.iu0 - b.iu1))))
+            b0, b1 = b.split_u(int(b.iu0+abs(b.iu0 - b.iu1)/2), self);
+            #b0, b1 = b.split_v(random.randint(b.iv0, b.iv1-1), self)
             assert b0.nvis + b1.nvis == b.nvis
             self.push_bin(b0)
             self.push_bin(b1)
@@ -430,12 +449,14 @@ class BinSet(Annealer):
             success = False
             for b1 in candidates:
                 self.state.remove(b1)
-                b_n = b0.merge(b1, self)
+                #b_n = b0.merge(b1, self)
+                b_n = b0.merge_power_of_two(b1, self)
                 # Visibility sum works out? Then we can proceed
                 nvis = b0.nvis + b1.nvis
                 if b_n.nvis == nvis:
                     self.push_bin(b_n)
                     success = True
+                    #print("Success!")
                     break
                 # Put bins back
                 self.push_bin(b1)

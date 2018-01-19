@@ -99,8 +99,8 @@ assert density.shape == (wcount, ucount, ucount), \
     "Density bins have wrong shape: Got %s, but expected %s!" % (density.shape, (wcount, ucount, ucount))
 
 # Calculate cost for FFT and Reprojection
-c_FFT = 5 * numpy.ceil(numpy.log(usize*usize)/numpy.log(2))*usize*usize
-c_Reproject = 50 * (usize*usize)
+c_FFT = 5 * numpy.log2(usize*usize)*usize*usize
+c_Reproject = 18 * (usize*usize)
 
 if args.load is None:
 
@@ -121,6 +121,8 @@ if args.load is None:
     bs = BinSet(bin_to_uvw, args, density, initial_bins,
                 name=os.path.splitext(os.path.basename(args.density.name))[0],
                 add_cost = c_FFT+c_Reproject)
+    print(bs1.nvis0)
+    print(bs.nvis0)
     assert bs.nvis0 == bs1.nvis0, "%d %d" % (bs.nvis0, bs1.nvis0)
     b = bs1.bins[0]
     print("Start:        %s" % bs.state)
