@@ -5,43 +5,10 @@
 #include <math.h>
 #include <complex.h>
 #include <sodium.h>
+
 #include "grid.h"
+#include "config.h"
 
-double grid_correction[] = { 0.04951909,  0.04635579,  0.04712115,  0.05060831,  0.0560945,   0.06315665,
-			     0.0715563,   0.08116772,  0.09193298,  0.10383379,  0.11687376,  0.13106728,
-			     0.14643229,  0.16298567,  0.18074009,  0.19970191,  0.21986963,  0.24123281,
-			     0.26377116,  0.28745395,  0.31223949,  0.33807485,  0.36489561,  0.39262584,
-			     0.42117816,  0.45045398,  0.48034386,  0.51072799,  0.54147689,  0.57245214,
-			     0.6035073,   0.634489,    0.66523804,  0.69559069,  0.72538003,  0.75443738,
-			     0.78259381,  0.80968166,  0.83553611,  0.85999675,  0.88290916,  0.90412638,
-			     0.92351044,  0.94093371,  0.95628025,  0.96944698,  0.98034476,  0.98889936,
-			     0.99505217,  0.9987609,   1.,          0.9987609,   0.99505217,  0.98889936,
-			     0.98034476,  0.96944698,  0.95628025,  0.94093371,  0.92351044,  0.90412638,
-			     0.88290916,  0.85999675,  0.83553611,  0.80968166,  0.78259381,  0.75443738,
-			     0.72538003,  0.69559069,  0.66523804,  0.634489,    0.6035073,   0.57245214,
-			     0.54147689,  0.51072799,  0.48034386,  0.45045398,  0.42117816,  0.39262584,
-			     0.36489561,  0.33807485,  0.31223949,  0.28745395,  0.26377116,  0.24123281,
-			     0.21986963,  0.19970191,  0.18074009,  0.16298567,  0.14643229,  0.13106728,
-			     0.11687376,  0.10383379,  0.09193298,  0.08116772,  0.0715563,   0.06315665,
-			     0.0560945,   0.05060831,  0.04712115,  0.04635579,  0.04951909};
-
-double grid_correction_w[] = { 0.22637738,  0.2126835,   0.20596314,  0.20474932,  0.2079147,   0.21459257,
-			       0.22411589,  0.23597038,  0.24975825,  0.26517025,  0.28196406,  0.29994765,
-			       0.3189664,   0.33889324,  0.35962107,  0.38105692,  0.40311757,  0.42572616,
-			       0.44880976,  0.47229746,  0.49611909,  0.52020422,  0.54448159,  0.56887872,
-			       0.59332168,  0.61773508,  0.64204216,  0.6661649,   0.69002432,  0.71354073,
-			       0.73663407,  0.75922431,  0.78123181,  0.80257772,  0.82318442,  0.84297595,
-			       0.86187838,  0.8798203,   0.89673317,  0.91255173,  0.92721442,  0.94066368,
-			       0.95284636,  0.96371397,  0.97322303,  0.98133529,  0.98801799,  0.99324406,
-			       0.99699224,  0.99924729,  0.99999999,  0.99924729,  0.99699224,  0.99324406,
-			       0.98801799,  0.98133529,  0.97322303,  0.96371397,  0.95284636,  0.94066368,
-			       0.92721442,  0.91255173,  0.89673317,  0.8798203,   0.86187838,  0.84297595,
-			       0.82318442,  0.80257772,  0.78123181,  0.75922431,  0.73663407,  0.71354073,
-			       0.69002432,  0.6661649,   0.64204216,  0.61773508,  0.59332168,  0.56887872,
-			       0.54448159,  0.52020422,  0.49611909,  0.47229746,  0.44880976,  0.42572616,
-			       0.40311757,  0.38105692,  0.35962107,  0.33889324,  0.3189664,   0.29994765,
-			       0.28196406,  0.26517025,  0.24975825,  0.23597038,  0.22411589,  0.21459257,
-			       0.2079147,   0.20474932,  0.20596314,  0.2126835,   0.22637738};
 
 double complex predict_dft(double *points, // l/m/l/m/l/m/..
 			   double pn,
@@ -53,55 +20,94 @@ double complex predict_dft(double *points, // l/m/l/m/l/m/..
     for(int i = 0; i<pn; ++i){
 	double l = *(points + i*2);
 	double m = *(points + i*2 + 1);
-	double n = sqrt(1.0-l*l-m*m) - 1;
+	double n = sqrt(1.0-l*l-m*m) - 1.0;
 	double exponent = -2 * M_PI * (u*l + v*m + w*n);
 	vis += cos(exponent) + I*sin(exponent);
     }
     return vis;
-
 }
-			   
-double complex predict_sze(double *points, // l/m/l/m/l/m/..
-			   double pn,
-			   double u,
-			   double v,
-			   double w,
-			   double du,
-			   double dw,
-			   double theta,
-			   int apply_aa,
-			   int apply_aa_w,
-			   struct sep_kernel_data *kernel_uv,
-			   struct sep_kernel_data *kernel_w){
 
-    
-    double complex vis = 0 + I*0;
-    for(int i = 0; i<pn; ++i){
-	double l = *(points + i*2);
-	double m = *(points + i*2 + 1);
-	double n = sqrt(1.0-l*l-m*m) - 1;
-       	double a = 1.0;
-	if (apply_aa) a *= grid_correction[(int)(((du*l+theta/2)/theta)*101)] *
-			  grid_correction[(int)(((du*m+theta/2)/theta)*101)];
-	if (apply_aa_w) a *= grid_correction_w[(int)(((dw*n+theta/2)/theta)*101)];
-	//if (apply_aa_w) a *= kernel_w->data[((kernel_w->size+1)*kernel_w->oversampling)/2 +
-	//				    (int)(dw*kernel_w->oversampling)];
-	double exponent = -2 * M_PI * (u*l + v*m + w*n);
-	vis += (cos(exponent) + I * sin(exponent))/a;
+
+
+double complex predict_grid(double *points,
+			    int pn,
+			    double u,
+			    double v,
+			    double w,
+			    double ov_u,
+			    double ov_v,
+			    double ov_w,
+			    double du,
+			    double dw,
+			    int aa_support,
+			    int aa_support_w,
+			    int aa_over,
+			    struct sep_kernel_data *grid_conv_uv,
+			    struct sep_kernel_data *grid_conv_w,
+			    struct sep_kernel_data *grid_corr_lm,
+			    struct sep_kernel_data *grid_corr_n){
+
+    // Pre-table our AA kernel.
+
+    double *aa = malloc(pn * sizeof(double));
+    for(int p=0; p<pn; ++p){
+	double l = points[p*2];
+	double m = points[p*2 + 1];
+	double n = sqrt(1.0-l*l-m*m) - 1.0;
+	
+	int lm_size_t = grid_corr_lm->size * grid_corr_lm->oversampling;
+	int n_size_t = grid_corr_n->size*grid_corr_n->oversampling;
+	double lm_step = 1.0/(double)lm_size_t;
+	double n_step = 1.0/(double)n_size_t; // Not too sure about this
+
+	double a = 1.0;
+	a *= grid_corr_lm->data[(int)round(((du*l)/lm_step) + (lm_size_t)/2)];
+	a *= grid_corr_lm->data[(int)round(((du*m)/lm_step) + (lm_size_t)/2)];
+	a *= grid_corr_n->data[(int)round(((dw*n)/n_step) + n_size_t/2)];
+
+	aa[p] = a;
+	printf("AA: %f \n",a);
     }
-    return vis;
+
+
+    double complex visg = 0 + I*0; 
+    for(int ius = 0; ius < aa_support; ++ius){
+	for(int ivs = 0; ivs < aa_support; ++ivs){
+	    for(int iws = 0; iws < aa_support_w; ++iws){
+		double dus = u + du * ((double)ius - (floor((double)aa_support/2.0)) + ov_u/(double)aa_over);
+		double dvs = v + du * ((double)ivs - (floor((double)aa_support/2.0)) + ov_v/(double)aa_over);
+		double dws = w + dw * ((double)iws - (floor((double)aa_support_w/2.0)) + ov_w/(double)aa_over);
+		printf("dus: %f",dus);
+		int aas_u = ius * aa_over + ov_u;
+		int aas_v = ivs * aa_over + ov_v;
+		int aas_w = iws * aa_over + ov_w;
+		double gcf = grid_conv_uv->data[aas_u] * grid_conv_uv->data[aas_v] * grid_conv_w->data[aas_w];
+		
+		double complex vis = 0 + I*0;
+		for(int p=0; p<pn; ++p){
+		    double l = *(points + p*2);
+		    double m = *(points + p*2 + 1);
+		    double n = sqrt(1.0-l*l-m*m) - 1.0;
+
+		    // Now calculate the DFT
+
+		    double exponent = -2 * M_PI * (dus*l + dvs*m + dws*n);
+		    double complex visl = cos(exponent) + I * sin(exponent);
+		    vis += visl/aa[p];    
+		}
+
+		
+		double complex visgcf = vis * gcf;
+		printf("GCF: %.15f\n",gcf);
+		//q		printf("GCF: %.15f + i%.15f\n",creal(visgcf),cimag(visgcf));
+		
+		visg += visgcf;
+	    }
+	}
+    }
+    free(aa);
+    return visg;
 }
-
-/*uint64_t predict_grid(double complex *points,
-		      double *uvw,
-		      double d_u,
-		      double d_v,
-		      double d_w,
-		      struct sep_kernel_data *kernel_uv,
-		      struct sep_kernel_data *kernel_w){
-
-
-}*/
 
 
 void generate_random_points(double *points,
@@ -109,8 +115,8 @@ void generate_random_points(double *points,
 			    double theta){
 
     for(int i=0; i<pn; ++i){
-	double l = (float)(randombytes_uniform(65536))/65536 - 0.5;
-	double m = (float)(randombytes_uniform(65536))/65536 - 0.5;
+	double l = (double)(randombytes_uniform(65536))/65536 - 0.5;
+	double m = (double)(randombytes_uniform(65536))/65536 - 0.5;
 	l *= theta;
 	m *= theta;
 	points[i*2] = l;
@@ -183,9 +189,6 @@ int main(int argc, char*argv[]){
         return 1;
     }
 
-    
-
-    
     struct sep_kernel_data *sepkern = malloc(sizeof(struct sep_kernel_data));
     struct sep_kernel_data *sepkernw = malloc(sizeof(struct sep_kernel_data));
     struct sep_kernel_data *sepkern_im = malloc(sizeof(struct sep_kernel_data));
@@ -201,23 +204,28 @@ int main(int argc, char*argv[]){
     load_sep_kern(sepkern_imf, sepkern_im);
     printf("Loading AA Kernel...");
     load_sep_kern(sepkern_im_wf, sepkern_im_w);
-    
+
+    printf("Generating Random Points...");
     double *randompoints = malloc(2 * points*sizeof(double));
-    generate_random_points(randompoints,points,theta);
-
-    for(int i=0; i<points; ++i){
-
-	printf("l: %f, m: %f",randompoints[i*2],randompoints[i*2+1]);
-
-    }
-    printf("\n\n");
-    for(int i=0; i<sepkern->size; ++i){
-	printf("%f ",sepkern->data[i*sepkern->oversampling]);
-    }
-    printf("\n");
+    generate_random_points(randompoints,points,theta);    
+    printf("done\n");
     
-    double complex vis = predict_dft(randompoints, points, 1.0, 1.0, 0.0);
-    printf("\nVis: Re: %f, Im: %f \n", creal(vis), cimag(vis));
-    double complex vis_sze = predict_sze(randompoints, points, 1.0, 1.0, 0.0, 0.03, 0.03, theta, 1, 1, sepkern, sepkernw);
+    double complex vis_sze = predict_grid(randompoints,
+					  points,
+					  1.0,
+					  1.0,
+					  1.0,
+					  43.0, 43.0, 43.0,
+					  5.0, 49.9374216791,
+					  sepkern->size,
+					  sepkernw->size,
+					  4096,
+					  sepkern,
+					  sepkernw,
+					  sepkern_im,
+					  sepkern_im_w);
+    double complex vis = predict_dft(randompoints, points, 1.0, 1.0, 1.0);
+    printf("\nVis: Re: %f, Im: %f \n", creal(vis), cimag(vis));				      
     printf("Vis Sze: Re: %f, Im: %f \n", creal(vis_sze), cimag(vis_sze));
+    printf("Delta: Re: %f, Im: %f \n", fabs(creal(vis)-creal(vis_sze)),fabs(cimag(vis)-cimag(vis_sze)));
 }
