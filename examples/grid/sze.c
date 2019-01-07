@@ -66,7 +66,6 @@ double complex predict_grid(double *points,
 	a *= grid_corr_n->data[(int)round(((dw*n)/n_step) + n_size_t/2)];
 
 	aa[p] = a;
-	printf("AA: %f \n",a);
     }
 
 
@@ -77,7 +76,6 @@ double complex predict_grid(double *points,
 		double dus = u + du * ((double)ius - (floor((double)aa_support/2.0)) + ov_u/(double)aa_over);
 		double dvs = v + du * ((double)ivs - (floor((double)aa_support/2.0)) + ov_v/(double)aa_over);
 		double dws = w + dw * ((double)iws - (floor((double)aa_support_w/2.0)) + ov_w/(double)aa_over);
-		printf("dus: %f",dus);
 		int aas_u = ius * aa_over + ov_u;
 		int aas_v = ivs * aa_over + ov_v;
 		int aas_w = iws * aa_over + ov_w;
@@ -88,20 +86,12 @@ double complex predict_grid(double *points,
 		    double l = *(points + p*2);
 		    double m = *(points + p*2 + 1);
 		    double n = sqrt(1.0-l*l-m*m) - 1.0;
-
 		    // Now calculate the DFT
-
 		    double exponent = -2 * M_PI * (dus*l + dvs*m + dws*n);
 		    double complex visl = cos(exponent) + I * sin(exponent);
 		    vis += visl/aa[p];    
 		}
-
-		
-		double complex visgcf = vis * gcf;
-		printf("GCF: %.15f\n",gcf);
-		//q		printf("GCF: %.15f + i%.15f\n",creal(visgcf),cimag(visgcf));
-		
-		visg += visgcf;
+		visg += vis * gcf;
 	    }
 	}
     }
